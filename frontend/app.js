@@ -1580,3 +1580,19 @@ async function runDemo(scenario) {
         btn.querySelector('.demo-label').textContent = origLabel;
     }
 }
+// ===== Mobile nav drawer =====
+(function () {
+    const toggle = el("nav-toggle"), overlay = el("nav-overlay");
+    const mq = window.matchMedia("(max-width: 900px)");
+    const setOpen = open => {
+        document.body.classList.toggle("nav-open", open);
+        toggle.setAttribute("aria-expanded", String(open));
+    };
+    toggle.addEventListener("click", () => setOpen(!document.body.classList.contains("nav-open")));
+    overlay.addEventListener("click", () => setOpen(false));
+    document.addEventListener("keydown", e => { if (e.key === "Escape") setOpen(false); });
+    document.querySelectorAll(".nav-menu a").forEach(a => a.addEventListener("click", () => setOpen(false)));
+    mq.addEventListener("change", e => { if (!e.matches) setOpen(false); });
+    // charts must resize when the layout changes
+    window.addEventListener("orientationchange", () => setTimeout(() => window.dispatchEvent(new Event("resize")), 250));
+})();
