@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AICTE-PRAMAAN - Seat-Pass System</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body data-role="aicte">
+    <div class="flag"></div>
+    <div class="layout">
+        <!-- Sidebar -->
+        <aside class="sidebar depth-panel">
+            <div class="brand">
+                <div class="logo-box">A</div>
+                <div>
+                    <h1>AICTE-PRAMAAN</h1>
+                    <span class="badge">Seat-Pass System</span>
+                    <div style="font-size: 10px; color: #94a3b8; margin-top: 4px; font-family: monospace;">v1.4.2-PROD (NIC MeghRaj)</div>
+                </div>
+            </div>
+
+            <div class="role-selector depth-input-box">
+                <label for="role">Active Role</label>
+                <select id="role">
+                    <option value="aicte">AICTE Admin (2FA)</option>
+                    <option value="institution">Institution Officer (INST001)</option>
+                    <option value="employer">Employer / Verifier</option>
+                    <option value="audit">Audit Officer (2FA)</option>
+                </select>
+            </div>
+
+            <nav class="nav-menu">
+                <a href="#" data-page="dash" class="active">
+                    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                    Dashboard
+                </a>
+                <a href="#" data-page="upload" class="restricted">
+                    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                    Data Ingestion
+                </a>
+                <a href="#" data-page="records" class="restricted">
+                    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+                    Registry
+                </a>
+                <a href="#" data-page="verify">
+                    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    Verify &amp; Certificate
+                </a>
+                <a href="#" data-page="vigilance" class="restricted aicte-only">
+                    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+                    Vigilance Center
+                </a>
+                <a href="#" data-page="review" class="restricted aicte-only">
+                    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>
+                    Dispute &amp; Review
+                </a>
+                <a href="#" data-page="impact">
+                    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                    Analytics &amp; BI
+                </a>
+                <a href="#" data-page="audit" class="restricted">
+                    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                    Audit Trail
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="canvas">
+            <header class="topbar">
+                <h2 id="page-title">Dashboard Overview</h2>
+                <div class="env"><span>NAD link</span><span>v1.4.2-PROD</span><span>SIH26263</span></div>
+                <div class="user-profile">
+                    <div class="avatar"></div>
+                    <span id="current-user-display">AICTE Admin</span>
+                </div>
+            </header>
+
+            <div class="content-area">
+
+                <!-- Dashboard Page -->
+                <section id="dash" class="page">
+
+                    <!-- ─── DEMO PANEL (minimal, professional) ─── -->
+                    <div class="demo-panel mb-24">
+                        <div class="demo-panel-header">
+                            <div>
+                                <div class="demo-panel-title">Evaluation Scenarios</div>
+                                <div class="demo-panel-sub">One-click automated workflows demonstrating end-to-end system behaviour.</div>
+                            </div>
+                            <span class="status-pill status-live">System Ready</span>
+                        </div>
+                        <div class="demo-btn-row">
+                            <button class="demo-scenario-btn" onclick="runDemo(1)">
+                                <span class="demo-num">01</span>
+                                <span class="demo-label">Normal Admission &amp; Verify</span>
+                            </button>
+                            <button class="demo-scenario-btn" onclick="runDemo(2)">
+                                <span class="demo-num">02</span>
+                                <span class="demo-label">Quota Stuffing — Auto Block</span>
+                            </button>
+                            <button class="demo-scenario-btn" onclick="runDemo(3)">
+                                <span class="demo-num">03</span>
+                                <span class="demo-label">Ghost Seat ML Alert</span>
+                            </button>
+                            <button class="demo-scenario-btn" onclick="runDemo(4)">
+                                <span class="demo-num">04</span>
+                                <span class="demo-label">Foreign Temp ID &amp; Escrow</span>
+                            </button>
+                            <button class="demo-scenario-btn" onclick="runDemo(5)">
+                                <span class="demo-num">05</span>
+                                <span class="demo-label">DPDP Consent Revocation</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-card depth-card">
+                            <div class="stat-title">Total Records</div>
+                            <div class="stat-value" id="s-total">0</div>
+                            <div class="stat-trend trend-up">Synced securely</div>
+                        </div>
+                        <div class="stat-card depth-card">
+                            <div class="stat-title">Flagged Anomalies</div>
+                            <div class="stat-value text-danger" id="s-flag">0</div>
+                            <div class="stat-trend trend-down">Requires review</div>
+                        </div>
+                        <div class="stat-card depth-card">
+                            <div class="stat-title">Cross-Institution</div>
+                            <div class="stat-value text-warning" id="s-dup">0</div>
+                            <div class="stat-trend trend-down">Potential duplicates</div>
+                        </div>
+                        <div class="stat-card depth-card">
+                            <div class="stat-title">Merkle Root Status</div>
+                            <div class="stat-value hash-value" id="s-root">Pending</div>
+                            <div class="stat-trend trend-up">Cryptographically sealed</div>
+                        </div>
+                    </div>
+
+                    <div class="depth-card flush mb-24">
+                        <div class="card-head">
+                            <h3>Bucket-Isolated Quota Compliance Matrix</h3>
+                            <span class="muted">B.Tech Computer Science &amp; Engineering · Digital Seat-Pass</span>
+                        </div>
+                        <div id="quota-matrix" class="matrix"></div>
+                    </div>
+
+                    <div class="depth-card table-wrapper">
+                        <h3>Intake vs. Actual Enrolment</h3>
+                        <table id="inst-table"></table>
+                    </div>
+                </section>
+
+                <!-- Data Ingestion -->
+                <section id="upload" class="page hidden">
+                    <div id="ing-head" class="page-head mb-24"></div>
+
+                    <!-- 1. Single Record -->
+                    <div class="depth-card mb-24">
+                        <h3>Ingest Single Student Record</h3>
+                        <div class="form-grid">
+                            <div class="input-group">
+                                <label>Institution</label>
+                                <select id="f-inst" class="depth-input"></select>
+                            </div>
+                            <div class="input-group">
+                                <label>APAAR ID (12-digit)</label>
+                                <input type="text" id="f-apaar" class="depth-input" maxlength="12" placeholder="e.g. 123456789012">
+                            </div>
+                            <div class="input-group">
+                                <label>Student Name</label>
+                                <input type="text" id="f-name" class="depth-input" placeholder="Full legal name">
+                            </div>
+                            <div class="input-group">
+                                <label>Enrollment / Roll No.</label>
+                                <input type="text" id="f-sid" class="depth-input" placeholder="Internal ID">
+                            </div>
+                            <div class="input-group">
+                                <label>Course Enrolled</label>
+                                <input type="text" id="f-course" class="depth-input" placeholder="e.g. B.Tech Computer Science">
+                            </div>
+                            <div class="input-group">
+                                <label>Admission Year</label>
+                                <input type="number" id="f-year" class="depth-input" value="2026">
+                            </div>
+                        </div>
+                        <div class="checkbox-group mt-16">
+                            <label class="check-label"><input type="checkbox" id="f-tfw"> TFW (&lt; 8L Income Verified)</label>
+                            <label class="check-label"><input type="checkbox" id="f-ews"> EWS Category</label>
+                            <label class="check-label"><input type="checkbox" id="f-nri"> NRI Quota</label>
+                            <label class="check-label"><input type="checkbox" id="f-fn"> Foreign (Temp ID required)</label>
+                            <label class="check-label"><input type="checkbox" id="f-consent" checked> Student Consent for External Verification</label>
+                        </div>
+                        <div class="action-row mt-24">
+                            <button id="add-btn" class="btn btn-primary depth-btn">Secure &amp; Upload Record</button>
+                            <span id="add-msg" class="msg"></span>
+                        </div>
+                    </div>
+
+                    <!-- 2. CSV Batch -->
+                    <div class="depth-card mb-24">
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 12px; margin-bottom: 16px;">
+                            <h3 style="border:none; padding:0; margin:0;">Batch Ingestion — Zero-Template CSV Mapper</h3>
+                            <span class="tag tag-success">Background Queue Active</span>
+                        </div>
+                        <p class="helper-text">Compatible with JOSAA / State CET export files. No ERP upgrade required.</p>
+                        <textarea id="csv" class="depth-input code-input" rows="6" placeholder="apaar, student_no, name, institution_id, course, year, tfw, ews, fn, supernumerary, consent"></textarea>
+                        <div class="action-row mt-16">
+                            <button id="csv-btn" class="btn btn-primary depth-btn">Process Batch</button>
+                            <button id="sample-btn" class="btn btn-secondary depth-btn">Load Sample Data</button>
+                            <button id="reset-btn" class="btn btn-danger depth-btn float-right">Purge Database</button>
+                        </div>
+                        <div id="csv-msg" class="msg mt-16"></div>
+                    </div>
+
+                    <!-- 3. Batch Validation Log -->
+                    <div class="depth-card flush mb-24">
+                        <div class="card-head">
+                            <h3>Live Batch Validation &amp; Discrepancy Log</h3>
+                            <span class="muted">Sample gateway responses · showing 6 of 1,240 records</span>
+                        </div>
+                        <div class="scroll"><table id="batch-table"></table></div>
+                    </div>
+
+                    <!-- ─── JOSAA Gateway (minimal, professional) ─── -->
+                    <div class="depth-card mb-24">
+                        <div class="josaa-header">
+                            <div>
+                                <h3 style="border:none; margin:0; padding:0;">JOSAA / State CET API Gateway</h3>
+                                <p class="helper-text" style="margin-top:4px;">Server-to-server seat allotment sync. Bypasses manual institutional uploads.</p>
+                            </div>
+                            <button id="btn-josaa" class="btn btn-primary depth-btn">Trigger Round 1 Sync</button>
+                        </div>
+
+                        <!-- Minimal log panel (hidden until triggered) -->
+                        <div id="josaa-terminal" class="josaa-log-panel hidden mt-16">
+                            <div class="josaa-log-meta">
+                                <span class="josaa-log-label">NIC Secure API Gateway</span>
+                                <span id="josaa-log-status" class="josaa-status-badge">Connecting…</span>
+                            </div>
+                            <ol id="josaa-logs" class="josaa-log-list"></ol>
+                        </div>
+                    </div>
+
+                    <!-- 4. Docker Data Engine -->
+                    <div class="depth-card" style="border: 1px solid var(--primary);">
+                        <h3>Docker Data Engine (Stress Test)</h3>
+                        <p class="helper-text mb-16">
+                            Simulate real-world load. Connects to the local Docker microservice to synthesize 30,000 records using the Polars Fast CSV engine, compute cryptographic hashes, and stream them to the ledger.
+                        </p>
+                        <div class="action-row">
+                            <button id="docker-btn" class="btn btn-primary depth-btn" style="background: #0f172a;">
+                                Stream 30,000 Records
+                            </button>
+                            <span id="docker-msg" class="msg" style="margin-left:16px;"></span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Records Page -->
+                <section id="records" class="page hidden">
+                    <div class="depth-card filter-bar mb-24">
+                        <input type="text" id="search" class="depth-input search-box" placeholder="Search by APAAR, Name, or Institution...">
+                    </div>
+                    <div class="depth-card table-wrapper">
+                        <table id="rec-table" class="data-table"></table>
+                        <div class="table-footer">
+                            <span id="rec-range">Showing 0 of 0 records</span>
+                            <div class="pager-btns">
+                                <button id="rec-prev" class="btn btn-secondary depth-btn">Previous</button>
+                                <span id="rec-page-label">Page 1 of 1</span>
+                                <button id="rec-next" class="btn btn-secondary depth-btn">Next</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Verify Page -->
+                <section id="verify" class="page hidden">
+                    <div class="verify-container">
+                        <div class="depth-card text-center verify-box">
+                            <div class="verify-icon">
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary);"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+                            </div>
+                            <h3>Cryptographic Verification</h3>
+                            <p class="helper-text mb-24">Enter a 12-digit APAAR ID. The system extracts the Merkle proof and verifies record integrity against the AICTE root hash.</p>
+                            <div class="verify-input-row">
+                                <input type="text" id="v-id" class="depth-input large-input" placeholder="0000 0000 0000">
+                                <button id="v-btn" class="btn btn-primary depth-btn large-btn">Verify Identity</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="v-out" class="mt-24"></div>
+                </section>
+
+                <!-- Vigilance Center -->
+                <section id="vigilance" class="page hidden">
+                    <div class="page-head mb-24">
+                        <h2>National Vigilance &amp; ML Anomaly Center</h2>
+                        <p>AICTE Regulation Bureau · enrolment integrity across all synced institutions</p>
+                    </div>
+                    <div class="depth-card flush mb-24"><div id="vig-kpi" class="kpi-grid"></div></div>
+
+                    <div class="split-grid mb-24">
+                        <!-- Isolation Forest -->
+                        <div class="depth-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <h3 style="border:none; padding:0; margin:0;">Isolation Forest — Fraud Clusters</h3>
+                                <span class="tag tag-purple">PCA Reduced</span>
+                            </div>
+                            <p class="helper-text mt-16 mb-16">High-dimensional feature space projection. Red markers denote predicted ghost / anomalous enrolments.</p>
+                            <div class="chart-container" style="height: 240px;">
+                                <canvas id="anomalyScatterChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Temporal Burst — REPLACED: no pie, no vibe chart -->
+                        <div class="depth-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <h3 style="border:none; padding:0; margin:0;">Temporal Upload Burst Analysis</h3>
+                                <span class="tag tag-danger">Alert Active</span>
+                            </div>
+                            <p class="helper-text mt-16 mb-16">Coordinated bulk uploads detected near statutory deadlines. Flag threshold &gt; 75 % per hour.</p>
+                            <div class="chart-container" style="height:200px;">
+                                <canvas id="temporalBurstChart"></canvas>
+                            </div>
+                            <div class="burst-alert mt-16">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                88% of INST-7201 batch uploaded within a 14-minute window — routed to review queue.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Fuzzy matching -->
+                    <div class="depth-card flush mb-24">
+                        <div class="card-head">
+                            <h3>Fuzzy Identity Matching — Cross-Institution Duplicate Engine</h3>
+                            <span class="tag tag-warning">Jaro-Winkler Algorithm</span>
+                        </div>
+                        <div class="fuzzy-grid" id="fuzzy-match-container"></div>
+                    </div>
+
+                    <div class="depth-card flush mb-24">
+                        <div class="card-head">
+                            <h3>Isolation Forest &amp; Fuzzy Linkage Anomaly Queue</h3>
+                            <span class="muted" id="anom-count"></span>
+                        </div>
+                        <div class="scroll"><table id="anom-table"></table></div>
+                    </div>
+                    <div class="depth-card flush">
+                        <div class="card-head">
+                            <h3>Flags from the Local Ledger</h3>
+                            <span class="muted" id="live-count"></span>
+                        </div>
+                        <div class="scroll"><table id="live-flags"></table></div>
+                    </div>
+                </section>
+
+                <!-- Analytics & BI -->
+                <section id="impact" class="page hidden">
+                    <div class="depth-card mb-24 export-panel">
+                        <div>
+                            <h3 style="border:none; margin:0; padding:0;">Generate Official Reports</h3>
+                            <p class="helper-text">Export digitally signed, compliance-ready files for AICTE and Ministry submissions.</p>
+                        </div>
+                        <div class="export-actions">
+                            <button class="btn btn-secondary depth-btn export-btn" onclick="triggerDownload(this, 'pdf', 'AICTE_EoA_Compliance_Report_2026.pdf')">📄 AICTE EoA Report (PDF)</button>
+                            <button class="btn btn-secondary depth-btn export-btn" onclick="triggerDownload(this, 'excel', 'Institution_Matrix_Data.xlsx')">📊 Matrix Dump (Excel)</button>
+                            <button class="btn btn-primary depth-btn export-btn" onclick="triggerDownload(this, 'pdf', 'Ministry_Statistical_Summary.pdf')">📈 Ministry Summary (PDF)</button>
+                        </div>
+                    </div>
+
+                    <div class="split-grid mb-24">
+                        <div class="depth-card">
+                            <h3>5-Year Enrollment Trends</h3>
+                            <div class="chart-container"><canvas id="trendChart"></canvas></div>
+                        </div>
+                        <div class="depth-card">
+                            <h3>Aggregate Demographics (SC / ST / OBC / GEN)</h3>
+                            <div class="chart-container"><canvas id="categoryChart"></canvas></div>
+                            <p class="helper-text mt-16 text-center">Data anonymised per DPDP Act 2023.</p>
+                        </div>
+                    </div>
+
+                    <div class="split-grid mb-24">
+                        <div class="depth-card">
+                            <h3>Category-wise Quota Utilisation</h3>
+                            <div class="chart-container"><canvas id="quotaBarChart"></canvas></div>
+                        </div>
+                        <div class="depth-card flush">
+                            <div class="card-head">
+                                <h3>Institution Compliance Rankings</h3>
+                                <span class="tag tag-success">Live Score</span>
+                            </div>
+                            <table class="data-table mt-16" style="margin-top:0;">
+                                <tr><th>Rank</th><th>Institution</th><th>Integrity Score</th><th>Status</th></tr>
+                                <tr><td><strong>#1</strong></td><td>Govind Institute of Tech.</td><td class="text-success">99.8%</td><td><span class="tag tag-success">Exemplary</span></td></tr>
+                                <tr><td><strong>#2</strong></td><td>Sharda School of Mgmt.</td><td class="text-success">98.5%</td><td><span class="tag tag-success">Compliant</span></td></tr>
+                                <tr><td><strong>#3</strong></td><td>Rajarshi College of Eng.</td><td class="text-warning">91.2%</td><td><span class="tag tag-warning">Minor Flags</span></td></tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- ─── Architecture Diagram (clean, minimal) ─── -->
+                    <div class="depth-card flush mt-24 mb-24">
+                        <div class="card-head">
+                            <h3>System Architecture &amp; Cryptographic Flow</h3>
+                            <span class="muted">Data flow across actors, services, and external APIs</span>
+                        </div>
+                        <div class="arch-diagram">
+                            <!-- Actors column -->
+                            <div class="arch-col">
+                                <div class="arch-col-label">Actors</div>
+                                <div class="arch-node arch-node-neutral">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                                    Institutions<span>Upload admissions</span>
+                                </div>
+                                <div class="arch-node arch-node-neutral">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>
+                                    AICTE Admin<span>Monitor &amp; enforce</span>
+                                </div>
+                                <div class="arch-node arch-node-neutral">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+                                    Employers<span>Read-only verify</span>
+                                </div>
+                            </div>
+
+                            <div class="arch-arrow-col">
+                                <div class="arch-arrow-line"></div>
+                            </div>
+
+                            <!-- Core engine -->
+                            <div class="arch-col arch-col-center">
+                                <div class="arch-col-label">Core Engine</div>
+                                <div class="arch-node arch-node-primary arch-node-lg">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                                    AICTE-PRAMAAN
+                                    <span>FastAPI · SHA-256 Auth</span>
+                                    <span>ML Fraud Engine</span>
+                                </div>
+                            </div>
+
+                            <div class="arch-arrow-col">
+                                <div class="arch-arrow-line arch-arrow-dashed"></div>
+                            </div>
+
+                            <!-- Ledger -->
+                            <div class="arch-col arch-col-center">
+                                <div class="arch-col-label">Ledger</div>
+                                <div class="arch-node arch-node-success arch-node-lg">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                                    Merkle Ledger
+                                    <span>Immutable hash chain</span>
+                                    <span>PostgreSQL · Redis</span>
+                                </div>
+                            </div>
+
+                            <div class="arch-arrow-col">
+                                <div class="arch-arrow-line"></div>
+                            </div>
+
+                            <!-- External APIs -->
+                            <div class="arch-col">
+                                <div class="arch-col-label">External APIs</div>
+                                <div class="arch-node arch-node-ext">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                    DigiLocker API<span>Zero-knowledge docs</span>
+                                </div>
+                                <div class="arch-node arch-node-ext">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                                    NAD / ABC Bridge<span>Academic credits</span>
+                                </div>
+                                <div class="arch-node arch-node-ext">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/></svg>
+                                    FRRO / e-Visa<span>Foreign national checks</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Flow legend -->
+                        <div class="arch-legend">
+                            <span><span class="leg-line leg-solid"></span> Authenticated request</span>
+                            <span><span class="leg-line leg-dashed"></span> Cryptographic sync (TLS)</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Dispute & Review -->
+                <section id="review" class="page hidden">
+                    <div class="page-head mb-24">
+                        <h2>Manual Review &amp; Dispute Resolution</h2>
+                        <p>Process student appeals, category mismatches, and review ML-flagged anomalies.</p>
+                    </div>
+                    <div class="depth-card flush mb-24">
+                        <div class="card-head">
+                            <h3>Pending Appeals &amp; Manual Verification Queue</h3>
+                            <span class="tag tag-warning">Action Required</span>
+                        </div>
+                        <div class="scroll">
+                            <table id="review-table" class="data-table"></table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Audit Trail -->
+                <section id="audit" class="page hidden">
+                    <div class="depth-card flush">
+                        <div class="card-head">
+                            <h3>SHA-256 Hash-Chained Immutable Audit Trail</h3>
+                            <span id="chain-status"></span>
+                        </div>
+                        <div class="scroll"><table id="audit-table" class="data-table"></table></div>
+                    </div>
+                </section>
+            </div>
+            <footer class="gov-footer">Government of India · Ministry of Education · AICTE-PRAMAAN v1.4.2-PROD · Hosted on NIC Cloud (MeghRaj), Pune</footer>
+        </main>
+    </div>
+
+    <!-- 2FA Modal -->
+    <div id="m-2fa" class="modal-overlay hidden">
+        <div class="modal-box depth-card">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:12px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <h3 style="border:none; padding:0; margin:0;">Security Verification</h3>
+                <p class="helper-text mt-16">Enter the 6-digit TOTP from your authenticator app to access this elevated role.</p>
+            </div>
+            <div class="otp-inputs">
+                <input type="text" maxlength="1" class="depth-input otp-input" />
+                <input type="text" maxlength="1" class="depth-input otp-input" />
+                <input type="text" maxlength="1" class="depth-input otp-input" />
+                <input type="text" maxlength="1" class="depth-input otp-input" />
+                <input type="text" maxlength="1" class="depth-input otp-input" />
+                <input type="text" maxlength="1" class="depth-input otp-input" />
+            </div>
+            <button id="btn-2fa-verify" class="btn btn-primary depth-btn w-100 mt-24" style="width: 100%;">Verify &amp; Authenticate</button>
+        </div>
+    </div>
+
+    <!-- Student 360° Modal -->
+    <div id="m-360" class="modal-overlay hidden">
+        <div class="modal-box depth-card" style="max-width: 850px; width: 95%; background: #f8fafc; padding: 0; overflow: hidden;">
+            <div style="background: #0f172a; color: white; padding: 20px 24px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 style="margin:0; border:none; padding:0; color:white;">Student 360° API Integration</h3>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top:4px;" class="mono" id="modal-360-apaar">APAAR: Fetching...</div>
+                </div>
+                <button onclick="document.getElementById('m-360').classList.add('hidden')" style="background:rgba(255,255,255,0.1); border:none; color:white; padding:6px 12px; border-radius:4px; cursor:pointer;">Close</button>
+            </div>
+            <div style="padding: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px;" id="modal-360-content">
+                <div class="depth-card" style="box-shadow: none;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom: 16px;">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Emblem_of_India.svg/200px-Emblem_of_India.svg.png" style="height:24px; opacity:0.7;">
+                        <h4 style="margin:0; color:#1e293b;">NAD / ABC Bridge</h4>
+                    </div>
+                    <div id="nad-loader" class="loader-line"></div>
+                    <div id="nad-data" class="hidden">
+                        <dl class="kv">
+                            <dt>Identity Status</dt><dd><span class="tag tag-success">Aadhaar Seeded &amp; Verified</span></dd>
+                            <dt>Academic Bank of Credits</dt><dd><span class="mono" style="font-size:16px; font-weight:bold; color:var(--primary);">124 Credits</span></dd>
+                            <dt>Previous Degree</dt><dd>HSC (CBSE 2025) · 89.2%</dd>
+                        </dl>
+                        <div class="notice mt-16" style="margin:0; font-size:11px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            <b>Continuous Verification Active</b>
+                            Dropouts or academic suspensions are instantly reflected across the AICTE network.
+                        </div>
+                    </div>
+                </div>
+                <div class="depth-card" style="box-shadow: none; border-top: 3px solid #0072bc;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom: 16px;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0072bc" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                        <h4 style="margin:0; color:#1e293b;">DigiLocker Gateway</h4>
+                    </div>
+                    <div id="digi-loader" class="loader-line"></div>
+                    <div id="digi-data" class="hidden">
+                        <p style="font-size:12px; color:var(--text-light); margin-bottom:12px;">Zero-Knowledge Document Verification. AICTE does not store original PDFs.</p>
+                        <ul class="feature-list" style="font-size:12px;">
+                            <li><strong>Income Certificate (&lt; 8L TFW)</strong><span class="mono text-success">Hash: 8a9f23c... · Verified against State Revenue API</span></li>
+                            <li><strong>Caste Validity Certificate</strong><span class="mono text-success">Hash: 4b29x1f... · Validated by DigiLocker</span></li>
+                        </ul>
+                        <div style="margin-top:16px; display:flex; gap:8px; align-items:center; padding:8px; background:#ecfdf5; border-radius:4px; font-size:11px; color:#047857;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            User Consent Token: CT-8992-ABC (Valid)
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Review Modal -->
+    <div id="m-review" class="modal-overlay hidden">
+        <div class="modal-box depth-card">
+            <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:12px;">Override &amp; Adjudicate</h3>
+            <dl class="kv mb-16 mt-16" id="review-details" style="grid-template-columns: 100px 1fr; background:#f8fafc; padding:12px; border-radius:6px; border:1px solid #e2e8f0;"></dl>
+            <div class="input-group mb-16">
+                <label>Officer Comments / Reason for Override</label>
+                <textarea id="review-reason" class="depth-input" rows="3" placeholder="State justification according to AICTE approval handbook..."></textarea>
+            </div>
+            <div class="action-row" style="display:flex; gap:12px;">
+                <button class="btn btn-success depth-btn" id="btn-approve-appeal" style="flex:1; background:var(--success); color:white; border:none;">Approve Appeal</button>
+                <button class="btn btn-danger depth-btn" id="btn-reject-appeal" style="flex:1;">Reject</button>
+                <button class="btn btn-secondary depth-btn" onclick="document.getElementById('m-review').classList.add('hidden')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+    <script src="app.js"></script>
+</body>
+</html>
