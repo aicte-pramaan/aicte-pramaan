@@ -992,30 +992,59 @@ el("v-btn").addEventListener("click", async () => {
 });
 
 // Docker Engine Event Listener
+const API_BASE_URL = "https://aicte-pramaan-api.onrender.com";
+
 el("docker-btn").addEventListener("click", async () => {
     const btn = el("docker-btn");
     const msg = el("docker-msg");
-    btn.innerText = "Generating via Docker...";
+
+    btn.innerText = "Generating via API...";
     btn.disabled = true;
     msg.innerHTML = "";
 
     try {
         const response = await fetch(
-            "https://aicte-pramaan-api.onrender.com/api/synthesize/30000"
+            `${API_BASE_URL}/api/synthesize/30000`
         );
+
+        if (!response.ok) {
+            throw new Error(`HTTP error: ${response.status}`);
+        }
+
         const data = await response.json();
 
-        if (data.status === "success") {
-            db.records = data.records; 
-            db.merkleRoot = data.merkle_root;
-            logAudit("MASS_INGESTION", `Docker engine synthesized ${data.generated_count} records in ${data.time_taken_seconds}s. Merkle Root: ${data.merkle_root.substring(0,8)}...`);
-            msg.innerHTML = `<span class="tag tag-success">Generated ${data.generated_count} records in ${data.time_taken_seconds}s</span>`;
-            document.querySelector('[data-page="dash"]').click();
-            setTimeout(() => { el("s-root").innerText = data.merkle_root.substring(0, 16) + "..."; }, 500);
+        if (data.status !== "success") {
+            throw new Error("The API did not return a success response.");
         }
+
+        db.records = data.records;
+        db.merkleRoot = data.merkle_root;
+
+        logAudit(
+            "MASS_INGESTION",
+            `API synthesized ${data.generated_count} records in ` +
+            `${data.time_taken_seconds}s. Merkle Root: ` +
+            `${data.merkle_root.substring(0, 8)}...`
+        );
+
+        msg.innerHTML =
+            `<span class="tag tag-success">Generated ` +
+            `${data.generated_count} records in ` +
+            `${data.time_taken_seconds}s</span>`;
+
+        document.querySelector('[data-page="dash"]').click();
+
+        setTimeout(() => {
+            el("s-root").innerText =
+                data.merkle_root.substring(0, 16) + "...";
+        }, 500);
+
     } catch (error) {
-        msg.innerHTML = `<span class="tag tag-danger">Connection Failed. Is Docker running?</span>`;
-        console.error(error);
+        console.error("API request failed:", error);
+
+        msg.innerHTML =
+            `<span class="tag tag-danger">API request failed. ` +
+            `Check the browser console for details.</span>`;
     } finally {
         btn.innerText = "Stream 30,000 Records";
         btn.disabled = false;
