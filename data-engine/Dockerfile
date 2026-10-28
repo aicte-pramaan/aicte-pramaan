@@ -2,10 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Copy requirements from data-engine
+COPY data-engine/requirement.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY generator.py .
+# Copy generator from data-engine
+COPY data-engine/generator.py .
 
 EXPOSE 8000
 
