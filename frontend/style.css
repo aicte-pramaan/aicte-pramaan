@@ -551,10 +551,6 @@ img, svg, canvas { max-width: 100%; }
   .split-grid, .cols, .form-grid { grid-template-columns: 1fr; }
   .page-head h2 { font-size: 22px; }
 
-  /* tables scroll sideways instead of being clipped */
-  .table-wrapper > table, .depth-card.flush > table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .scroll table { min-width: 640px; }
-
   /* demo + misc */
   .demo-btn-row { flex-direction: column; }
   .demo-scenario-btn { width: 100%; }
@@ -649,4 +645,76 @@ img, svg, canvas { max-width: 100%; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ================================================================
+   RESPONSIVE TABLES
+   ================================================================ */
+
+/* Tablet: keep real table, scroll sideways inside its box */
+@media (max-width: 1100px) and (min-width: 761px) {
+  .table-wrapper, .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-wrapper > table, .scroll > table { min-width: 720px; }
+  .table-footer { position: sticky; left: 0; }
+  .rtable td { white-space: normal; }
+  .resp-cell { min-width: 260px; }
+}
+
+/* Phone + small tablet: each row becomes a labelled card */
+@media (max-width: 760px) {
+  .table-wrapper, .scroll { overflow: visible; }
+  .depth-card.flush { overflow: visible; }
+
+  table.rtable, .rtable tbody { display: block; width: 100%; min-width: 0 !important; }
+  .rtable .rhead { display: none; }
+
+  .rtable tr {
+    display: block; width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    margin: 0 0 12px; padding: 0;
+    box-shadow: var(--sh-xs);
+    overflow: hidden;
+  }
+  .rtable tr:last-child { margin-bottom: 0; }
+  .depth-card.flush .rtable { padding: 12px; }
+  .table-wrapper .rtable { padding: 4px 0 0; }
+
+  .rtable td {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;
+    width: 100%; max-width: none !important;
+    padding: 9px 14px;
+    border-bottom: 1px dashed var(--line-light);
+    text-align: right;
+    white-space: normal !important; word-break: break-word;
+  }
+  .rtable tr:last-child td { border-bottom: 1px dashed var(--line-light); }
+  .rtable td:last-child { border-bottom: none !important; }
+  .rtable td:first-child { background: var(--surface-2); border-bottom: 1px solid var(--line-light); }
+
+  .rtable td::before {
+    content: attr(data-label);
+    flex: 0 0 36%; max-width: 36%;
+    text-align: left;
+    font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .4px;
+    color: var(--tx-3);
+    padding-top: 2px;
+  }
+  .rtable .cv { flex: 1; min-width: 0; text-align: right; }
+  .rtable .cv .tag { margin: 2px 0 2px 4px; }
+  .rtable td .sub { margin-top: 2px; }
+
+  /* empty-state rows ("No records found") */
+  .rtable td[colspan] { display: block; text-align: center; background: none; }
+  .rtable td[colspan]::before { content: none; }
+
+  .resp-cell { max-width: none; }
+  .rtable td .depth-btn { width: 100%; }
+  .rtable td.num, .rtable th.num { text-align: right; }
+
+  /* registry pager */
+  .table-footer { flex-direction: column; align-items: stretch; text-align: center; gap: 10px; }
+  .pager-btns { justify-content: space-between; }
 }
