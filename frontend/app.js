@@ -1000,7 +1000,9 @@ el("docker-btn").addEventListener("click", async () => {
     msg.innerHTML = "";
 
     try {
-        const response = await fetch("http://localhost:8000/api/synthesize/30000");
+        const response = await fetch(
+            "https://aicte-pramaan-api.onrender.com/api/synthesize/30000"
+        );
         const data = await response.json();
 
         if (data.status === "success") {
