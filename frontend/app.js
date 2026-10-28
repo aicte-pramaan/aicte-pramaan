@@ -1596,3 +1596,57 @@ async function runDemo(scenario) {
     // charts must resize when the layout changes
     window.addEventListener("orientationchange", () => setTimeout(() => window.dispatchEvent(new Event("resize")), 250));
 })();
+
+// ===== Responsive tables: safe auto-labeling for phone card views =====
+(function () {
+    const IDS = [
+        "inst-table", "batch-table", "rec-table", "anom-table",
+        "live-flags", "review-table", "audit-table", "rank-table"
+    ];
+
+    const observers = new Map();
+
+    function prep(t) {
+        if (!t) return;
+        const first = t.querySelector("tr");
+        if (!first) return;
+
+        // Disconnect observer during DOM manipulation to prevent infinite loops
+        const obs = observers.get(t);
+        if (obs) obs.disconnect();
+
+        const heads = [...first.children].map(h => h.textContent.trim());
+        first.classList.add("rhead");
+
+        t.querySelectorAll("tr").forEach(tr => {
+            if (tr === first) return;
+            [...tr.children].forEach((td, i) => {
+                if (td.hasAttribute("colspan")) return; // Empty state row check
+                if (heads[i]) td.setAttribute("data-label", heads[i]);
+
+                if (!td.querySelector(":scope > .cv")) {
+                    const w = document.createElement("div");
+                    w.className = "cv";
+                    while (td.firstChild) w.appendChild(td.firstChild);
+                    td.appendChild(w);
+                }
+            });
+        });
+        
+        t.classList.add("rtable");
+
+        // Reconnect observer for dynamic updates
+        if (obs) obs.observe(t, { childList: true, subtree: true });
+    }
+
+    IDS.forEach(id => {
+        const t = document.getElementById(id);
+        if (!t) return;
+
+        const obs = new MutationObserver(() => prep(t));
+        observers.set(t, obs);
+
+        prep(t);
+        obs.observe(t, { childList: true, subtree: true });
+    });
+})();

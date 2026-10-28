@@ -264,7 +264,7 @@ td code.rc-wn { color: #d97706; }
 .resp-cell { max-width: 480px; }
 .apaar-link { color: var(--indigo); text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; font-weight: 600; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
 .apaar-link:hover { color: var(--indigo-deep); }
-#inst-table th:first-child, #inst-table td:first-child { max-width: 200px; white-space: normal; word-break: break-word; }
+#inst-table th:first-child, #inst-table td:first-child { max-width: 260px; white-space: normal; overflow-wrap: break-word; word-break: normal; }
 
 /* ----------------------------------------------------------------
    15. FORMS
@@ -651,70 +651,112 @@ img, svg, canvas { max-width: 100%; }
    RESPONSIVE TABLES
    ================================================================ */
 
-/* Tablet: keep real table, scroll sideways inside its box */
+/* Tablet (761px to 1100px): Smooth horizontal scroll container */
 @media (max-width: 1100px) and (min-width: 761px) {
-  .table-wrapper, .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .table-wrapper > table, .scroll > table { min-width: 720px; }
+  .table-wrapper, .scroll { 
+    overflow-x: auto !important; 
+    -webkit-overflow-scrolling: touch; 
+    border-radius: var(--r-md);
+  }
+  .table-wrapper > table, .scroll > table { 
+    min-width: 720px; 
+  }
   .table-footer { position: sticky; left: 0; }
   .rtable td { white-space: normal; }
   .resp-cell { min-width: 260px; }
 }
 
-/* Phone + small tablet: each row becomes a labelled card */
+/* Phones & Small Tablets (<= 760px): Native Mobile Card Layout */
 @media (max-width: 760px) {
-  .table-wrapper, .scroll { overflow: visible; }
-  .depth-card.flush { overflow: visible; }
+  .table-wrapper, .scroll { overflow: visible !important; }
+  .depth-card.flush { overflow: visible !important; }
 
   table.rtable, .rtable tbody { display: block; width: 100%; min-width: 0 !important; }
-  .rtable .rhead { display: none; }
+  .rtable .rhead { display: none !important; }
 
   .rtable tr {
-    display: block; width: 100%;
+    display: block; 
+    width: 100%;
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--r-md);
-    margin: 0 0 12px; padding: 0;
+    margin: 0 0 14px; 
+    padding: 4px 0;
     box-shadow: var(--sh-xs);
     overflow: hidden;
   }
   .rtable tr:last-child { margin-bottom: 0; }
-  .depth-card.flush .rtable { padding: 12px; }
+  .depth-card.flush .rtable { padding: 8px 0; }
   .table-wrapper .rtable { padding: 4px 0 0; }
 
-  .rtable td {
-    display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;
-    width: 100%; max-width: none !important;
-    padding: 9px 14px;
-    border-bottom: 1px dashed var(--line-light);
-    text-align: right;
-    white-space: normal !important; word-break: break-word;
+  .rtable td,
+  #inst-table.rtable td:first-child,
+  #batch-table.rtable td:first-child,
+  #rec-table.rtable td:first-child,
+  #anom-table.rtable td:first-child,
+  #live-flags.rtable td:first-child,
+  #review-table.rtable td:first-child,
+  #audit-table.rtable td:first-child {
+    display: flex !important; 
+    justify-content: space-between !important; 
+    align-items: center !important; 
+    gap: 12px !important;
+    width: 100% !important; 
+    max-width: none !important;
+    padding: 10px 14px !important;
+    border-bottom: 1px solid var(--line-light) !important;
+    text-align: right !important;
+    white-space: normal !important; 
+    word-break: normal !important; 
+    overflow-wrap: break-word !important;
   }
-  .rtable tr:last-child td { border-bottom: 1px dashed var(--line-light); }
+  
+  .rtable tr:last-child td { border-bottom: 1px solid var(--line-light) !important; }
   .rtable td:last-child { border-bottom: none !important; }
-  .rtable td:first-child { background: var(--surface-2); border-bottom: 1px solid var(--line-light); }
+  
+  .rtable td:first-child { 
+    background: var(--surface-2) !important; 
+    border-bottom: 1px solid var(--line-light) !important; 
+  }
 
   .rtable td::before {
     content: attr(data-label);
-    flex: 0 0 36%; max-width: 36%;
+    flex: 0 0 38%; 
+    max-width: 38%;
     text-align: left;
-    font-size: 10.5px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: .4px;
+    font-size: 11px; 
+    font-weight: 700;
+    text-transform: uppercase; 
+    letter-spacing: .4px;
     color: var(--tx-3);
-    padding-top: 2px;
+    padding-top: 0;
+    word-break: normal;
   }
-  .rtable .cv { flex: 1; min-width: 0; text-align: right; }
+
+  .rtable .cv { 
+    flex: 1; 
+    min-width: 0; 
+    text-align: right; 
+    word-break: normal; 
+    overflow-wrap: break-word; 
+  }
+  
   .rtable .cv .tag { margin: 2px 0 2px 4px; }
   .rtable td .sub { margin-top: 2px; }
 
-  /* empty-state rows ("No records found") */
-  .rtable td[colspan] { display: block; text-align: center; background: none; }
-  .rtable td[colspan]::before { content: none; }
+  /* Empty state formatting */
+  .rtable td[colspan] { 
+    display: block !important; 
+    text-align: center !important; 
+    background: none !important; 
+  }
+  .rtable td[colspan]::before { content: none !important; }
 
   .resp-cell { max-width: none; }
-  .rtable td .depth-btn { width: 100%; }
+  .rtable td .depth-btn { width: auto; display: inline-flex; }
   .rtable td.num, .rtable th.num { text-align: right; }
 
-  /* registry pager */
+  /* Registry Pager Fix */
   .table-footer { flex-direction: column; align-items: stretch; text-align: center; gap: 10px; }
   .pager-btns { justify-content: space-between; }
 }
