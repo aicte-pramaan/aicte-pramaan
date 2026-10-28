@@ -1,3 +1,6 @@
+import os
+import uvicorn
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from faker import Faker
@@ -79,3 +82,7 @@ def synthesize_data(count: int):
         "engine": "Polars Fast CSV & FastAPI",
         "records": records
     }
+
+    if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("generator:app", host="0.0.0.0", port=port)
