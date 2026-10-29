@@ -1,4 +1,4 @@
-const API_BASE = "https://aicte-pramaan-api.onrender.com";
+const API_BASE = "https://aicte-pramaan-data-engine.onrender.com";
 let jwtToken = ""; // Stores the backend JWT session token
 
 // ----------------------------------------------------------------------
