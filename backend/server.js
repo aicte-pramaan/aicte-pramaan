@@ -10,7 +10,10 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 
 const connectDB = require('./config/db');
-const { rehydrateMerkleTree } = require('./utils/cryptoUtils');
+const {
+    rehydrateMerkleTree,
+    resignStoredRecords
+} = require('./utils/cryptoUtils');
 
 const app = express();
 
@@ -65,6 +68,12 @@ async function startServer() {
     }
 
     console.log('MongoDB connection verified.');
+
+    if (process.env.RESIGN_EXISTING_RECORDS === 'true') {
+        await resignStoredRecords();
+    }
+
+    await rehydrateMerkleTree();
 
     // Restore the Merkle tree from persistent database records
     await rehydrateMerkleTree();

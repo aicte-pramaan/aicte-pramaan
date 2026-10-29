@@ -1,7 +1,17 @@
 const crypto = require('crypto');
 const nacl = require('tweetnacl');
 
-const keyPair = nacl.sign.keyPair();
+const secretKeyHex = process.env.ED25519_SECRET_KEY || '';
+
+if (!/^[0-9a-f]{128}$/i.test(secretKeyHex)) {
+    throw new Error(
+        'ED25519_SECRET_KEY must be set to a 128-character hexadecimal key.'
+    );
+}
+
+const keyPair = nacl.sign.keyPair.fromSecretKey(
+    Buffer.from(secretKeyHex, 'hex')
+);
 
 const getPublicKey = () => Buffer.from(keyPair.publicKey).toString('hex');
 
@@ -98,11 +108,34 @@ const rehydrateMerkleTree = async () => {
     console.log(`Merkle Tree rehydrated with ${globalMerkleTree.leaves.length} records.`);
 };
 
+const resignStoredRecords = async () => {
+    const StudentRecord = require('../models/StudentRecord');
+    const records = await StudentRecord.find({});
+
+    for (const record of records) {
+        const visiblePayload = {
+            student_id: record.student_id,
+            name: record.name,
+            institution_id: record.institution_id,
+            branch: record.branch,
+            admission_year: record.admission_year
+        };
+
+        record.ed25519_signature = signData(visiblePayload);
+        await record.save();
+    }
+
+    console.log(
+        `Re-signed ${records.length} records with the persistent Ed25519 key.`
+    );
+};
+
 module.exports = {
     getPublicKey,
     signData,
     hashLeaf,
     globalMerkleTree,
     hashApaar,
-    rehydrateMerkleTree
+    rehydrateMerkleTree,
+    resignStoredRecords
 };
