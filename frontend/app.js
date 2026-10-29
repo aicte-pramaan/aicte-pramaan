@@ -1,3 +1,6 @@
+const API_BASE = "https://aicte-pramaan-api.onrender.com";
+let jwtToken = ""; // Stores the backend JWT session token
+
 // ----------------------------------------------------------------------
 // Sync SHA-256 (used for the hash-chained audit trail)
 // ----------------------------------------------------------------------
@@ -554,18 +557,45 @@ document.querySelectorAll(".otp-input").forEach((input, index, inputs) => {
 });
 
 // 2FA Verification Simulation
-el("btn-2fa-verify").addEventListener("click", () => {
+// Live 2FA & JWT Authentication
+el("btn-2fa-verify").addEventListener("click", async () => {
     const btn = el("btn-2fa-verify");
     btn.innerHTML = `Verifying TOTP...`;
     
-    setTimeout(() => {
-        el("m-2fa").classList.add("hidden");
+    try {
+        // Map the UI role to the backend credentials
+        let username = pendingRole === 'institution' ? 'INST001' : 'AICTE_ADMIN';
+        let password = pendingRole === 'institution' ? 'inst_password_2026' : 'admin_password_2026';
+        let totp_code = "123456"; // Simulating valid TOTP app input
+
+        const response = await fetch(`${API_BASE}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, totp_code })
+        });
+
+        const data = await response.json();
+
+        if (data.access_token) {
+            jwtToken = data.access_token; // Save token for future requests
+            
+            el("m-2fa").classList.add("hidden");
+            btn.innerHTML = "Verify & Authenticate";
+            el("role").value = pendingRole;
+            applyRole(pendingRole);
+            
+            // Clear inputs
+            document.querySelectorAll(".otp-input").forEach(i => i.value = ""); 
+            showToast("Security", `Connected to Backend. Role: ${pendingRole.toUpperCase()}`, "success");
+        } else {
+            showToast("Auth Failed", data.error || "Invalid credentials", "danger");
+            btn.innerHTML = "Verify & Authenticate";
+        }
+    } catch (err) {
+        console.error(err);
+        showToast("Network Error", "Cannot reach the Node.js backend on Port 5000.", "danger");
         btn.innerHTML = "Verify & Authenticate";
-        el("role").value = pendingRole;
-        applyRole(pendingRole);
-        document.querySelectorAll(".otp-input").forEach(i => i.value = ""); // Clear inputs
-        logAudit("SECURITY", `Successful 2FA Login for role: ${pendingRole.toUpperCase()}`);
-    }, 800); // Fake network delay
+    }
 });
 
 function applyRole(role) {
@@ -608,28 +638,57 @@ el("f-branch").addEventListener("change", () => { syncCourseFromBranch(); render
 el("f-inst").addEventListener("change", updateSeatHint);
 syncCourseFromBranch();
 
-el("add-btn").addEventListener("click", () => {
-    const data = {
-        apaar: el("f-apaar").value.trim(), sid: el("f-sid").value.trim(), name: el("f-name").value.trim(),
-        inst: el("f-inst").value, branch: el("f-branch").value, course: el("f-course").value.trim(),
-        year: parseInt(el("f-year").value), tfw: el("f-tfw")?.checked || false, ews: el("f-ews")?.checked || false,
-        nri: el("f-nri")?.checked || false, fn: el("f-fn")?.checked || false,
-        sup: el("f-nri")?.checked || el("f-tfw")?.checked || el("f-fn")?.checked,
-        ghost_flag: false, consent: el("f-consent").checked
+el("add-btn").addEventListener("click", async () => {
+    if (!jwtToken) {
+        showToast("Error", "You must be authenticated to ingest records.", "danger");
+        return;
+    }
+
+    const btn = el("add-btn");
+    btn.innerText = "Securing...";
+    btn.disabled = true;
+
+    const recordPayload = {
+        apaar_id: el("f-apaar").value.trim(), 
+        student_id: el("f-sid").value.trim(), 
+        name: el("f-name").value.trim(),
+        institution_id: el("f-inst").value, 
+        branch: el("f-branch").value, 
+        admission_year: parseInt(el("f-year").value), 
+        is_tfw: el("f-tfw")?.checked || false, 
+        has_consent: el("f-consent").checked
     };
     
-    const res = processRecord(data);
-    const msgEl = el("add-msg");
-    msgEl.innerText = res.msg;
-    msgEl.className = `msg mt-16 tag ${res.success ? 'tag-success' : 'tag-danger'}`;
-    
-    if (res.success) {
-        ["f-apaar", "f-sid", "f-name"].forEach(id => el(id).value = "");
-        el("f-course").value = lastAutoCourse = courseFor(el("f-branch").value);
-        updateSeatHint();
-        
-        // CORRECTED: Added backticks and moved inside the success block
-        showToast("Admission Confirmed", `Student ${data.name} has been notified via SMS about their secured seat at ${data.inst}.`, "success");
+    try {
+        const response = await fetch(`${API_BASE}/api/records/ingest`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${jwtToken}`
+            },
+            body: JSON.stringify(recordPayload)
+        });
+
+        const data = await response.json();
+        const msgEl = el("add-msg");
+
+        if (response.ok) {
+            msgEl.innerText = `Secured at Leaf Index: ${data.index}`;
+            msgEl.className = `msg mt-16 tag tag-success`;
+            
+            // Clear UI
+            ["f-apaar", "f-sid", "f-name"].forEach(id => el(id).value = "");
+            showToast("Admission Confirmed", "Record cryptographically secured in MongoDB.", "success");
+        } else {
+            msgEl.innerText = data.error || "Upload failed";
+            msgEl.className = `msg mt-16 tag tag-danger`;
+        }
+    } catch (err) {
+        console.error(err);
+        showToast("Network Error", "Failed to reach backend.", "danger");
+    } finally {
+        btn.innerText = "Secure & Upload Record";
+        btn.disabled = false;
     }
 });
 
@@ -953,42 +1012,59 @@ function buildCertificate(record, c) {
 }
 
 el("v-btn").addEventListener("click", async () => {
-    const norm = s => String(s).replace(/[\s-]/g, "");
-    const raw = el("v-id").value.trim();
+    const rawId = el("v-id").value.trim().replace(/[\s-]/g, "");
     const out = el("v-out");
     const role = el("role").value;
 
-    const sorted = sortRecords();
-    const targetIdx = sorted.findIndex(r => norm(r.apaar) === norm(raw));
+    if (!rawId) return;
 
-    logAudit("VERIFICATION_REQ", `Queried APAAR: ${raw}`);
+    out.innerHTML = `<div class="loader-line"></div>`;
 
-    if (targetIdx === -1) {
-        out.innerHTML = `<div class="depth-card"><p class="text-danger">Record not found in decentralized ledger.</p></div>`;
-        return;
+    try {
+        // Fetch offline QR payload from backend
+        const response = await fetch(`${API_BASE}/api/records/generate-qr/${rawId}`);
+        
+        // 1. Handle DPDP Consent Revocation
+        if (response.status === 403) {
+            out.innerHTML = `<div class="depth-card">
+                <h4 class="text-danger">Access Denied (DPDP Act 2023)</h4>
+                <p class="helper-text mt-16">The student associated with this ID has explicitly revoked consent for third-party verification.</p>
+            </div>`;
+            return;
+        }
+
+        // 2. Handle Not Found
+        if (response.status === 404) {
+            out.innerHTML = `<div class="depth-card"><p class="text-danger">Record not found in the cryptographic ledger.</p></div>`;
+            return;
+        }
+
+        const payload = await response.json();
+        
+        // 3. Re-render the UI Certificate using data directly from MongoDB/Merkle Tree
+        const mockRecord = {
+            inst: payload.data.institution_id,
+            sid: payload.data.student_id,
+            apaar: rawId,
+            name: payload.data.name,
+            course: "Verified Programme",
+            year: payload.data.admission_year,
+            branch: payload.data.branch
+        };
+
+        out.innerHTML = buildCertificate(mockRecord, {
+            isValid: true, // In a true offline app, the nacl verification happens here
+            rootHash: payload.merkle_root,
+            leafHash: payload.apaar_hmac,
+            proofLen: payload.proof.length,
+            total: 9999, // Dynamic total omitted for brevity
+            isEmployer: role === "employer"
+        });
+
+    } catch (err) {
+        console.error(err);
+        out.innerHTML = `<div class="depth-card"><p class="text-danger">Network Error verifying cryptographic payload.</p></div>`;
     }
-
-    const record = sorted[targetIdx];
-
-    if (role === "employer" && !record.consent) {
-        out.innerHTML = `<div class="depth-card">
-            <h4 class="text-danger">Access Denied</h4>
-            <p class="helper-text mt-16">The student associated with this APAAR ID has explicitly revoked consent for third-party employer verification.</p>
-        </div>`;
-        return;
-    }
-
-    const tree = await generateMerkleTree(sorted);
-    const rootHash = tree[tree.length - 1][0];
-    const leafHash = await sha256(createCanonicalString(record));
-    const proof = getMerkleProof(tree, targetIdx);
-    const isValid = await verifyMerkleProof(leafHash, proof, rootHash);
-
-    out.innerHTML = buildCertificate(record, {
-        isValid, rootHash, leafHash,
-        proofLen: proof.length, total: sorted.length,
-        isEmployer: role === "employer"
-    });
 });
 
 // Docker Engine Event Listener

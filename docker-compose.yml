@@ -1,0 +1,49 @@
+services:
+  mongodb:
+    image: mongo:4.4
+    container_name: aicte_mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build: ./backend
+    container_name: aicte_backend
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - MONGO_URI=mongodb://mongodb:27017/aicte_pramaan
+      - JWT_SECRET=super_secure_jwt_secret_for_aicte_2026
+      - HMAC_SECRET=aicte_super_secret_hmac_key_2026
+    volumes:
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      - mongodb
+
+  frontend:
+    image: nginx:alpine
+    container_name: aicte_frontend
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+
+  data-engine:
+    build: ./data-engine
+    container_name: aicte_data_engine
+    environment:
+      # The engine can reach the backend internally via the Docker service name
+      - API_BASE_URL=http://backend:5000
+      - MONGO_URI=mongodb://mongodb:27017/aicte_pramaan
+    depends_on:
+      - backend
+      - mongodb
+
+volumes:
+  mongo_data:
