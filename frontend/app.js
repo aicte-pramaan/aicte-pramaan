@@ -1,4 +1,4 @@
-const API_BASE = "https://aicte-pramaan-data-engine.onrender.com";
+const API_BASE = "https://aicte-pramaan-api.onrender.com";
 let jwtToken = ""; // Stores the backend JWT session token
 
 // ----------------------------------------------------------------------
@@ -1068,7 +1068,7 @@ el("v-btn").addEventListener("click", async () => {
 });
 
 // Docker Engine Event Listener
-const API_BASE_URL = "https://aicte-pramaan-api.onrender.com";
+const API_BASE_URL = "https://aicte-pramaan-data-engine.onrender.com";
 
 el("docker-btn").addEventListener("click", async () => {
     const btn = el("docker-btn");
