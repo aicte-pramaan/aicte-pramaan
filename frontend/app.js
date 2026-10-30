@@ -1857,7 +1857,7 @@ el("docker-btn").addEventListener("click", async () => {
     msg.innerHTML = "";
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/synthesize/30000`);
+        const response = await fetch(`${API_BASE_URL}/api/synthesize/300`);
         if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
 
         const data = await response.json();
@@ -1896,7 +1896,7 @@ el("docker-btn").addEventListener("click", async () => {
         console.error("Stream/sync failed:", error);
         msg.innerHTML = `<span class="tag tag-danger">Failed: ${escapeHTML(error.message)}</span>`;
     } finally {
-        btn.innerText = "Stream 30,000 Records";
+        btn.innerText = "Stream 300 Records";
         btn.disabled = false;
     }
 });
