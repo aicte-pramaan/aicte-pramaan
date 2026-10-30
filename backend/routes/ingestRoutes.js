@@ -119,6 +119,79 @@ router.get('/generate-qr/:apaar_id', async (req, res) => {
     }
 });
 
+// Verify a record using its opaque APAAR HMAC reference.
+router.get('/verify-hmac/:apaar_hmac', async (req, res) => {
+    try {
+        const apaar_hmac = String(req.params.apaar_hmac || "").toLowerCase();
+
+        if (!/^[a-f0-9]{64}$/.test(apaar_hmac)) {
+            return res.status(400).json({ error: "Invalid verification reference" });
+        }
+
+        const record = await StudentRecord.findOne({ apaar_hmac });
+
+        if (!record) {
+            return res.status(404).json({ error: "Record not found" });
+        }
+
+        if (!record.has_consent) {
+            return res.status(403).json({
+                error: "Student consent has been revoked"
+            });
+        }
+
+        const canonicalData =
+            `${record.apaar_hmac}|${record.student_id}|` +
+            `${record.institution_id}|${record.branch}|${record.admission_year}`;
+
+        const leafHash = hashLeaf(canonicalData);
+
+        const leafIndex = globalMerkleTree.leaves.findIndex(
+            leaf => leaf.equals(leafHash)
+        );
+
+        if (leafIndex === -1) {
+            return res.status(500).json({
+                error: "Merkle tree is out of sync"
+            });
+        }
+
+        const merkleRoot = globalMerkleTree.getRoot();
+
+        const merkleRootSignature = signData({
+            merkle_root: merkleRoot
+        });
+
+        const proof = globalMerkleTree.getProof(leafIndex);
+
+        return res.json({
+            version: "1.0",
+            public_key: getPublicKey(),
+            apaar_hmac: record.apaar_hmac,
+
+            data: {
+                student_id: record.student_id,
+                name: record.name,
+                institution_id: record.institution_id,
+                branch: record.branch,
+                admission_year: record.admission_year
+            },
+
+            signature: record.ed25519_signature,
+            merkle_root: merkleRoot,
+            merkle_root_signature: merkleRootSignature,
+            record_count: globalMerkleTree.leaves.length,
+            proof
+        });
+
+    } catch (error) {
+        console.error("HMAC verification error:", error);
+        return res.status(500).json({
+            error: "Unable to verify this record"
+        });
+    }
+});
+
 // 3. STUDENT CONSENT REVOCATION
 router.post('/student/revoke-consent', async (req, res) => {
     try {

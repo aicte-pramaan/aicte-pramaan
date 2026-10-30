@@ -901,23 +901,51 @@ el("f-inst").addEventListener("change", renderIngHead);
 el("f-year").addEventListener("input", renderIngHead);
 
 // 📱 REAL QR Code Generator (Connects to actual verification endpoint)
-function qrSVG(seedHex, size) {
-    const verifyUrl = encodeURIComponent(
-        `${window.location.origin}${window.location.pathname}`
-    );
-
+function qrSVG(size = 104) {
     return `
-        <img
-            src="https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${verifyUrl}"
-            alt="Open verification portal"
+        <div
+            id="certificate-qr"
             style="
-                border:1px solid #b5a572;
-                padding:4px;
-                background:#fff;
                 width:${size}px;
                 height:${size}px;
+                padding:4px;
+                border:1px solid #b5a572;
+                background:#fff;
+                margin:auto;
             ">
+        </div>
     `;
+}
+
+function buildVerificationUrl(apaarHmac) {
+    const url = new URL(window.location.href);
+
+    url.search = "";
+    url.hash = "";
+
+    url.searchParams.set("verify", apaarHmac);
+
+    return url.toString();
+}
+
+function renderCertificateQR(apaarHmac, size = 104) {
+    const target = document.getElementById("certificate-qr");
+
+    if (!target) return;
+
+    target.innerHTML = "";
+
+    if (typeof window.QRCode !== "function") {
+        target.textContent = "QR generator unavailable";
+        return;
+    }
+
+    new QRCode(target, {
+        text: buildVerificationUrl(apaarHmac),
+        width: size,
+        height: size,
+        correctLevel: QRCode.CorrectLevel.M
+    });
 }
 
 // 📱 Simulated Multi-Device Notifications (SMS/Email)
@@ -1022,42 +1050,30 @@ function showToast(title, msg, type = "info") {
 
 
 function buildCertificate(record, c) {
-    const inst = INSTITUTIONS.find(i => i.id === record.inst);
-    const instName = inst ? inst.name : record.inst;
+    const br = BRANCH_MAP[branchOf(record)] || {
+        name: record.branch || "Not available",
+        code: record.branch || "—"
+    };
 
-    const br = BRANCH_MAP[branchOf(record)];
-    const y = Number(record.year);
-    const batch = y
-        ? `${y}-${String(y + 1).slice(-2)}`
-        : "n/a";
+    const year = Number(record.year);
 
-    const seat = record.nri
-        ? "NRI_QUOTA"
-        : record.tfw
-            ? "TFW_SUPERNUMERARY"
-            : record.fn
-                ? "FN_SUPERNUMERARY"
-                : record.ews
-                    ? "EWS"
-                    : "CORE_MERIT";
+    const batch = year
+        ? `${year}-${String(year + 1).slice(-2)}`
+        : "Not available";
 
-    const h = c.leafHash;
+    const leafHash = c.leafHash || "";
 
-    const apaarShown = /^\d{12}$/.test(record.apaar)
-        ? record.apaar.replace(/(\d{4})(?=\d)/g, "$1-")
-        : record.apaar;
+    const apaarShown = /^\d{12}$/.test(String(record.apaar || ""))
+        ? String(record.apaar).replace(/(\d{4})(?=\d)/g, "$1-")
+        : record.apaar
+            ? record.apaar
+            : "Protected (QR verification)";
 
-    const roleSel = el("role");
-    const roleLabel =
-        roleSel.options[roleSel.selectedIndex].text;
-
-    const ref = `VRF-${new Date().toISOString().slice(0, 10)}-${String(
-        db.audit[0] ? db.audit[0].block : 1
-    ).padStart(7, "0")}`;
+    const ref = `VRF-${leafHash.slice(0, 12).toUpperCase()}`;
 
     const checks = [
         [c.keyMatches === true, "Trusted public key matches"],
-        [c.signatureValid === true, "Record signature verified"],
+        [c.signatureValid === true, "Student record signature verified"],
         [c.rootSignatureValid === true, "Merkle root signature verified"],
         [c.proofValid === true, "Merkle inclusion proof verified"]
     ];
@@ -1068,11 +1084,8 @@ function buildCertificate(record, c) {
         ? pill("CRYPTOGRAPHICALLY VERIFIED", "ok")
         : pill("VERIFICATION FAILED", "er");
 
-    const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
-
-    const hidden = c.isEmployer
-        ? pill("Masked", "pu")
-        : pill("Visible to your role", "in");
+    const row = (key, value) =>
+        `<dt>${key}</dt><dd>${value}</dd>`;
 
     return `
     <div class="cols">
@@ -1080,11 +1093,12 @@ function buildCertificate(record, c) {
         <section class="depth-card flush">
 
             <div class="card-head">
-                <h3>Dual-ID Seat-Pass Certificate</h3>
+                <h3>Student Record Verification Certificate</h3>
 
                 <button
                     type="button"
-                    class="btn btn-primary depth-btn certificate-print-btn">
+                    class="btn btn-primary depth-btn certificate-print-btn"
+                    ${allOk ? "" : "disabled"}>
                     Print / Save PDF
                 </button>
             </div>
@@ -1093,66 +1107,70 @@ function buildCertificate(record, c) {
 
                 <div class="row">
                     <div>
-                        <small>Institution record</small>
-                        <h3>${escapeHTML(instName)}</h3>
-                        <small>Institute ID ${escapeHTML(record.inst)}</small>
+                        <small>Institution ID</small>
+                        <h3>${escapeHTML(record.inst || "Not available")}</h3>
+                        <small>AICTE Pramaan prototype ledger</small>
                     </div>
 
                     <div class="ids">
                         <div>
-                            <b>Enrolment No.:</b>
-                            ${escapeHTML(record.sid || "n/a")}
+                            <b>Student ID:</b>
+                            ${escapeHTML(record.sid || "Not available")}
                         </div>
 
                         <div>
-                            <b>National APAAR ID:</b>
+                            <b>APAAR ID:</b>
                             ${escapeHTML(apaarShown)}
                         </div>
                     </div>
                 </div>
 
                 <div class="mid">
-                    <small>This is to certify that</small>
+                    <small>Student record for</small>
                     <br>
 
                     <span class="nm">
-                        ${escapeHTML(record.name)}
+                        ${escapeHTML(record.name || "Not available")}
                     </span>
 
                     <div style="line-height:1.7;margin-top:6px">
-                        is enrolled against a sanctioned seat in the programme
+                        Programme
                         <br>
 
                         <b style="font-size:17px">
-                            ${escapeHTML(record.course)}
+                            ${escapeHTML(record.course || record.branch || "Not available")}
                         </b>
 
                         <br>
 
                         <span style="font-size:12px">
                             Branch: ${escapeHTML(br.name)}
-                            · Admission batch AY ${batch}
-                            ${c.isEmployer ? "" : " · Seat category " + seat}
+                            · Admission batch AY ${escapeHTML(batch)}
                         </span>
                     </div>
                 </div>
 
                 <div class="ft">
                     <div>
-                        Verification reference: ${escapeHTML(ref)}
+                        Verification reference:
+                        ${escapeHTML(ref)}
                         <br>
+
                         Platform: AICTE Pramaan SIH prototype
                         <br>
-                        Proof: Ed25519 + SHA-256 Merkle inclusion proof
+
+                        Method: Ed25519 + SHA-256 Merkle proof
                         <br>
+
                         Record signature:
                         ${escapeHTML(String(c.signature || "").slice(0, 24))}...
                     </div>
 
                     <div style="text-align:center">
-                        ${qrSVG(h, 104)}
+                        ${qrSVG(104)}
+
                         <div style="font-size:9px">
-                            OPEN VERIFICATION PORTAL
+                            SCAN TO VERIFY RECORD
                         </div>
                     </div>
                 </div>
@@ -1163,15 +1181,12 @@ function buildCertificate(record, c) {
         <section class="depth-card flush">
 
             <div class="card-head">
-                <h3>Authorized Stakeholder Verification Gateway</h3>
-                <span class="muted">Consent-aware access</span>
+                <h3>Cryptographic Verification</h3>
+                <span class="muted">Server-side consent gate passed</span>
             </div>
 
             <dl class="kv">
-                ${row("Verifier", escapeHTML(roleLabel))}
-                ${row("Scan reference", escapeHTML(ref))}
-                ${row("Subject APAAR", escapeHTML(apaarShown))}
-                ${row("Consent status", pill("Granted", "ok"))}
+                ${row("Verification reference", escapeHTML(ref))}
                 ${row("Result", result)}
             </dl>
 
@@ -1187,14 +1202,17 @@ function buildCertificate(record, c) {
             <div class="sep" style="padding:16px;background:#fafafa">
 
                 <b style="font-size:13px;color:#1e293b">
-                    Cryptographic Signature Info
+                    Cryptographic Signature Information
                 </b>
 
                 <div class="mono"
-                    style="font-size:11px;color:var(--text-light);
-                    word-break:break-all;line-height:1.6">
+                    style="
+                        font-size:11px;
+                        color:var(--text-light);
+                        word-break:break-all;
+                        line-height:1.6">
 
-                    <b>Public Key:</b>
+                    <b>Trusted Public Key:</b>
                     ${escapeHTML(c.publicKey || "")}
 
                     <br>
@@ -1215,45 +1233,19 @@ function buildCertificate(record, c) {
                 </div>
             </div>
 
-            <div class="sep">
-                <div class="notice">
-                    ${ICON.shield}
-                    <div>
-                        <b>
-                            ${c.isEmployer
-                                ? "Consent-aware selective disclosure"
-                                : "Full view for an authorised role"}
-                        </b>
-                    </div>
-                </div>
-            </div>
-
-            <dl class="kv sep">
-                ${row("Name, programme, institute", pill("Disclosed", "ok"))}
-                ${row("Branch / discipline", pill(br.code, "ok"))}
-                ${row(`Seat validity (AY ${batch})`, pill("Disclosed", "ok"))}
-                ${row("Seat category / quota", hidden)}
-                ${row("Caste Category", hidden)}
-                ${row("TFW Parental Income", hidden)}
-                ${row("Aadhaar Vault Token", hidden)}
-            </dl>
-
             <dl class="kv sep">
                 ${row("Merkle root", escapeHTML(c.rootHash || ""))}
-                ${row("Leaf hash", escapeHTML(h || ""))}
-
+                ${row("Leaf hash", escapeHTML(leafHash))}
                 ${row(
                     "Proof path",
-                    `${c.proofLen} sibling nodes · ${Number(c.total || 0).toLocaleString()} leaves`
+                    `${Number(c.proofLen || 0)} sibling nodes · ${Number(c.total || 0).toLocaleString()} records`
                 )}
-
                 ${row(
                     "Inclusion proof",
                     c.proofValid
                         ? pill("VALID", "ok")
                         : pill("INVALID", "er")
                 )}
-
                 ${row(
                     "Root signature",
                     c.rootSignatureValid
@@ -1311,24 +1303,46 @@ async function sha256(bytes) {
 
 async function verifyLedgerPayload(payload) {
     if (!window.nacl) {
-        throw new Error("Ed25519 library failed to load");
+        throw new Error("Ed25519 verification library failed to load");
     }
 
-    if (!payload.data || !Array.isArray(payload.proof)) {
-        throw new Error("Incomplete verification payload");
+    if (
+        !payload ||
+        payload.version !== "1.0" ||
+        !payload.data ||
+        !Array.isArray(payload.proof) ||
+        !/^[a-f0-9]{64}$/i.test(payload.apaar_hmac || "") ||
+        !/^[a-f0-9]{64}$/i.test(payload.merkle_root || "")
+    ) {
+        throw new Error("Incomplete or invalid verification payload");
     }
 
-    const encoder = new TextEncoder();
     const d = payload.data;
+    const encoder = new TextEncoder();
 
-    const publicKey = hexToBytes(TRUSTED_ED25519_PUBLIC_KEY);
+    if (
+        !d.student_id ||
+        !d.name ||
+        !d.institution_id ||
+        !d.branch ||
+        d.admission_year === undefined ||
+        d.admission_year === null
+    ) {
+        throw new Error("Student record contains missing fields");
+    }
+
+    const trustedKey = hexToBytes(TRUSTED_ED25519_PUBLIC_KEY);
+
+    if (trustedKey.length !== 32) {
+        throw new Error("Invalid trusted public key configuration");
+    }
 
     const keyMatches =
+        typeof payload.public_key === "string" &&
         payload.public_key.toLowerCase() ===
         TRUSTED_ED25519_PUBLIC_KEY.toLowerCase();
 
-    // Verify record signature.
-    // Property order must match the backend's signData() function.
+    // Property order must match backend signData().
     const recordData = {
         student_id: d.student_id,
         name: d.name,
@@ -1337,28 +1351,35 @@ async function verifyLedgerPayload(payload) {
         admission_year: d.admission_year
     };
 
+    const recordSignature = hexToBytes(payload.signature);
+
     const recordSignatureValid =
         keyMatches &&
+        recordSignature.length === 64 &&
         nacl.sign.detached.verify(
             encoder.encode(JSON.stringify(recordData)),
-            hexToBytes(payload.signature),
-            publicKey
+            recordSignature,
+            trustedKey
         );
 
-    // Verify signature of the Merkle root.
     const rootData = {
         merkle_root: payload.merkle_root
     };
 
+    const rootSignature = hexToBytes(
+        payload.merkle_root_signature
+    );
+
     const rootSignatureValid =
         keyMatches &&
+        rootSignature.length === 64 &&
         nacl.sign.detached.verify(
             encoder.encode(JSON.stringify(rootData)),
-            hexToBytes(payload.merkle_root_signature),
-            publicKey
+            rootSignature,
+            trustedKey
         );
 
-    // Recreate the exact leaf used by the backend.
+    // Reconstruct the exact leaf used by the backend.
     const canonicalData =
         `${payload.apaar_hmac}|${d.student_id}|` +
         `${d.institution_id}|${d.branch}|${d.admission_year}`;
@@ -1372,13 +1393,13 @@ async function verifyLedgerPayload(payload) {
 
     const leafHash = toHex(currentHash);
 
-    // Verify each Merkle sibling.
+    // Verify the Merkle inclusion proof.
     for (const item of payload.proof) {
         if (
             !item ||
             !["left", "right"].includes(item.position)
         ) {
-            throw new Error("Invalid Merkle proof");
+            throw new Error("Invalid Merkle proof structure");
         }
 
         const sibling = hexToBytes(item.sibling);
@@ -1387,11 +1408,13 @@ async function verifyLedgerPayload(payload) {
             throw new Error("Invalid Merkle sibling hash");
         }
 
-        const left =
-            item.position === "left" ? sibling : currentHash;
+        const left = item.position === "left"
+            ? sibling
+            : currentHash;
 
-        const right =
-            item.position === "right" ? sibling : currentHash;
+        const right = item.position === "right"
+            ? sibling
+            : currentHash;
 
         currentHash = await sha256(
             concatBytes(
@@ -1412,6 +1435,7 @@ async function verifyLedgerPayload(payload) {
         rootSignatureValid,
         proofValid,
         leafHash,
+
         valid:
             keyMatches &&
             recordSignatureValid &&
@@ -1421,25 +1445,30 @@ async function verifyLedgerPayload(payload) {
 }
 
 
-el("v-btn").addEventListener("click", async () => {
-    const rawId = el("v-id").value.trim().replace(/[\s-]/g, "");
+// Main verification function.
+// Supports both manual APAAR entry and QR-based HMAC lookup.
+async function performRecordVerification({
+    apaarId = "",
+    apaarHmac = ""
+} = {}) {
     const out = el("v-out");
-    const role = el("role").value;
-
-    if (!rawId) return;
 
     out.innerHTML = `<div class="loader-line"></div>`;
 
     try {
-        const response = await fetch(
-            `${API_BASE}/api/records/generate-qr/${encodeURIComponent(rawId)}`
-        );
+        const endpoint = apaarHmac
+            ? `${API_BASE}/api/records/verify-hmac/${encodeURIComponent(apaarHmac)}`
+            : `${API_BASE}/api/records/generate-qr/${encodeURIComponent(apaarId)}`;
+
+        const response = await fetch(endpoint);
+
+        const payload = await response.json().catch(() => ({}));
 
         if (response.status === 403) {
             out.innerHTML = `
                 <div class="depth-card">
                     <h4 class="text-danger">Access Denied</h4>
-                    <p>Student consent has been revoked.</p>
+                    <p>Student consent is not available for verification.</p>
                 </div>`;
             return;
         }
@@ -1454,10 +1483,10 @@ el("v-btn").addEventListener("click", async () => {
             return;
         }
 
-        const payload = await response.json();
-
         if (!response.ok) {
-            throw new Error(payload.error || "Backend verification failed");
+            throw new Error(
+                payload.error || "Backend verification failed"
+            );
         }
 
         const result = await verifyLedgerPayload(payload);
@@ -1465,29 +1494,37 @@ el("v-btn").addEventListener("click", async () => {
         const record = {
             inst: payload.data.institution_id,
             sid: payload.data.student_id,
-            apaar: rawId,
+
+            // QR lookup deliberately does not reveal the raw APAAR ID.
+            apaar: apaarId,
+
             name: payload.data.name,
-            course: courseFor(payload.data.branch) || payload.data.branch,
+            course:
+                courseFor(payload.data.branch) ||
+                payload.data.branch,
             year: payload.data.admission_year,
-            branch: payload.data.branch,
-            ghost_flag: false
+            branch: payload.data.branch
         };
 
         out.innerHTML = buildCertificate(record, {
-            isValid: result.valid,
             keyMatches: result.keyMatches,
             signatureValid: result.recordSignatureValid,
             rootSignatureValid: result.rootSignatureValid,
             proofValid: result.proofValid,
+
             publicKey: payload.public_key,
             signature: payload.signature,
             rootSignature: payload.merkle_root_signature,
+
             rootHash: payload.merkle_root,
             leafHash: result.leafHash,
+
             proofLen: payload.proof.length,
-            total: payload.record_count,
-            isEmployer: role === "employer"
+            total: payload.record_count
         });
+
+        // Generate the record-specific QR after the certificate is inserted.
+        renderCertificateQR(payload.apaar_hmac, 104);
 
     } catch (error) {
         console.error("Cryptographic verification error:", error);
@@ -1498,7 +1535,50 @@ el("v-btn").addEventListener("click", async () => {
                 <p>${escapeHTML(error.message)}</p>
             </div>`;
     }
+}
+
+
+// Manual verification using a 12-digit APAAR ID.
+el("v-btn").addEventListener("click", async () => {
+    const rawId = el("v-id").value
+        .trim()
+        .replace(/[\s-]/g, "");
+
+    if (!/^\d{12}$/.test(rawId)) {
+        el("v-out").innerHTML = `
+            <div class="depth-card">
+                <p class="text-danger">
+                    Enter a valid 12-digit APAAR ID.
+                </p>
+            </div>`;
+        return;
+    }
+
+    await performRecordVerification({
+        apaarId: rawId
+    });
 });
+
+
+// Automatic verification when someone scans the certificate QR code.
+const qrReference = new URLSearchParams(
+    window.location.search
+).get("verify");
+
+if (qrReference) {
+    if (/^[a-f0-9]{64}$/i.test(qrReference)) {
+        performRecordVerification({
+            apaarHmac: qrReference
+        });
+    } else {
+        el("v-out").innerHTML = `
+            <div class="depth-card">
+                <p class="text-danger">
+                    Invalid QR verification reference.
+                </p>
+            </div>`;
+    }
+}
 
 
 // Docker Engine Event Listener
