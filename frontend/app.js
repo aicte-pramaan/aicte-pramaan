@@ -316,6 +316,9 @@ function processRecord(recordData) {
         logAudit("INGEST_RECORD", `New admission mapped to ${recordData.apaar} [${recordData.branch}]`);
     }
     
+    // Any independent record mutation makes the previously fetched backend root stale.
+    db.merkleRoot = "";
+    db.merkleRootSource = "";
     saveDB();
     return { success: true, msg: "Record securely encrypted and saved." };
 }
@@ -445,7 +448,14 @@ async function updateDashboard() {
     el("inst-table").innerHTML = tableHTML;
 
     if (db.records.length === 0) { el("s-root").innerText = "No data"; return; }
-    if (db.records.length > 1000) { el("s-root").innerText = db.merkleRoot ? db.merkleRoot.substring(0, 16) + "..." : "Computed via Backend"; return; }
+    if (db.merkleRoot && db.merkleRootSource === "BACKEND") {
+        el("s-root").innerText = db.merkleRoot.substring(0, 16) + "...";
+        return;
+    }
+    if (db.records.length > 1000) {
+        el("s-root").innerText = "Backend root unavailable";
+        return;
+    }
     const tree = await generateMerkleTree(sortRecords());
     el("s-root").innerText = tree[tree.length - 1][0].substring(0, 16) + "...";
 }
@@ -713,17 +723,67 @@ const activePage = () => {
     return a ? a.getAttribute("data-page") : "dash";
 };
 
+// Browser-history-aware in-app navigation. Each dashboard page is a history step,
+// so the browser Back and Forward buttons work like ordinary website navigation.
+const APP_PAGE_IDS = new Set(["dash", "upload", "records", "verify", "vigilance", "review", "impact", "audit"]);
+
+function activateAppPage(targetPage) {
+    if (!APP_PAGE_IDS.has(targetPage) || !el(targetPage)) return false;
+
+    document.querySelectorAll(".page").forEach(page => page.classList.add("hidden"));
+    document.querySelectorAll(".nav-menu a").forEach(link => link.classList.remove("active"));
+
+    const page = el(targetPage);
+    const link = document.querySelector(`.nav-menu a[data-page="${targetPage}"]`);
+    page.classList.remove("hidden");
+    if (link) link.classList.add("active");
+
+    const title = el("page-title");
+    if (title) title.innerText = link ? link.innerText.trim() : targetPage;
+
+    renderPage(targetPage);
+    if (targetPage === "upload") updateSeatHint();
+    if (document.body.classList.contains("nav-open") && typeof window.closeMobileNavigation === "function") window.closeMobileNavigation();
+    return true;
+}
+
+function navigateToPage(targetPage, addHistoryEntry = true) {
+    if (!APP_PAGE_IDS.has(targetPage)) return false;
+
+    if (addHistoryEntry) {
+        const nextHash = `#${targetPage}`;
+        if (window.location.hash !== nextHash) {
+            const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+            window.history.pushState({ aictePage: targetPage }, "", nextUrl);
+        }
+    }
+    return activateAppPage(targetPage);
+}
+
+window.navigateToPage = navigateToPage;
+
+// The entry gate is also a browser-history step. Going Back to #entry reopens it;
+// going Forward to a dashboard hash restores the selected page.
+window.addEventListener("popstate", () => {
+    const route = window.location.hash.replace(/^#/, "");
+    if (route === "entry") {
+        if (typeof window.showEntryGate === "function") window.showEntryGate();
+        return;
+    }
+    if (route === "signin") {
+        if (typeof window.showEntrySignIn === "function") window.showEntrySignIn();
+        return;
+    }
+
+    const page = APP_PAGE_IDS.has(route) ? route : "dash";
+    if (typeof window.hideEntryGate === "function") window.hideEntryGate();
+    activateAppPage(page);
+});
+
 document.querySelectorAll(".nav-menu a").forEach(link => {
-    link.addEventListener("click", e => {
-        e.preventDefault();
-        const targetPage = link.getAttribute("data-page");
-        document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
-        document.querySelectorAll(".nav-menu a").forEach(l => l.classList.remove("active"));
-        el(targetPage).classList.remove("hidden");
-        link.classList.add("active");
-        el("page-title").innerText = link.innerText.trim();
-        renderPage(targetPage);
-        if (targetPage === "upload") updateSeatHint();
+    link.addEventListener("click", event => {
+        event.preventDefault();
+        navigateToPage(link.getAttribute("data-page"), true);
     });
 });
 
@@ -749,6 +809,7 @@ el("role").addEventListener("change", (e) => {
         showToast("Sign-in unavailable", "The authentication dialog is missing.", "danger");
         return;
     }
+    if (typeof window.beginEntrySignInStep === "function") window.beginEntrySignInStep();
     modal.classList.remove("hidden");
     const firstOtp = document.querySelector(".otp-input");
     if (firstOtp) firstOtp.focus();
@@ -826,6 +887,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
         jwtToken = data.access_token;
         jwtRole = data.role;
         el("m-2fa")?.classList.add("hidden");
+        if (typeof window.completeEntrySignInStep === "function") window.completeEntrySignInStep();
         el("role").value = pendingRole;
         inputs.forEach(input => { input.value = ""; });
         applyRole(pendingRole);
@@ -2054,153 +2116,212 @@ if (qrReference) {
 
 
 // ======================================================================
-// Docker Engine Event Listener
+// Docker Data Engine — FastAPI integration
+// The deployed generator.py exposes GET /api/synthesize/{count}.
 // ======================================================================
 const API_BASE_URL = "https://aicte-pramaan-data-engine.onrender.com";
+const DATA_ENGINE_COUNT = 300;
 
-document.addEventListener("click", async (e) => {
-    const btn = e.target.closest("#docker-btn");
+document.addEventListener("click", async event => {
+    const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const btn = target?.closest("#docker-btn");
     if (!btn) return;
-
-    console.log("Docker button clicked!");
 
     const msg = document.getElementById("docker-msg");
     if (!msg) return;
 
-    if (!jwtToken) {
-        msg.innerHTML = '<span class="tag tag-warning">Authenticate as AICTE Admin before streaming records.</span>';
+    if (!jwtToken || jwtRole !== "AICTE") {
+        msg.innerHTML = '<span class="tag tag-warning">Sign in as AICTE Admin before sending generated records to the ledger.</span>';
         return;
     }
 
-    btn.innerHTML = "Processing...";
     btn.disabled = true;
+    btn.textContent = "Generating records...";
+    msg.innerHTML = '<span class="tag tag-info">Connecting to the Data Engine...</span>';
 
     try {
-        msg.innerHTML = `<span class="tag tag-info">Synthesizing 300 records via Polars...</span>`;
-
-        // 1. Fetch from Docker Data Engine
-        const engineController = new AbortController();
-        const engineTimeout = window.setTimeout(() => engineController.abort(), 60000);
-        let engineRes;
-        let data;
+        // Current generator.py route: @app.get("/api/synthesize/{count}")
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 120000);
+        let engineResponse;
+        let engineData;
         try {
-            engineRes = await fetch(`${API_BASE_URL}/stream-records?count=300`, {
-                signal: engineController.signal
+            engineResponse = await fetch(`${API_BASE_URL}/api/synthesize/${DATA_ENGINE_COUNT}`, {
+                method: "GET",
+                headers: { "Accept": "application/json" },
+                signal: controller.signal,
+                cache: "no-store"
             });
-            data = await engineRes.json().catch(() => ({}));
+            engineData = await engineResponse.json().catch(() => ({}));
         } finally {
-            window.clearTimeout(engineTimeout);
+            window.clearTimeout(timeoutId);
         }
 
-        if (!engineRes.ok) throw new Error(data.error || `Data Engine error ${engineRes.status}`);
-        if (!Array.isArray(data.records)) throw new Error("Data Engine response is missing a records array.");
+        if (!engineResponse.ok) {
+            if (engineResponse.status === 404) {
+                throw new Error(
+                    `The Data Engine returned 404 for /api/synthesize/${DATA_ENGINE_COUNT}. ` +
+                    `Check that the Render Data Engine service is deploying data-engine/generator.py.`
+                );
+            }
+            throw new Error(engineData.detail || engineData.error || `Data Engine error ${engineResponse.status}`);
+        }
+        if (!Array.isArray(engineData.records)) {
+            throw new Error("The Data Engine response did not contain a records array.");
+        }
+        if (engineData.records.length !== DATA_ENGINE_COUNT) {
+            throw new Error(`The Data Engine returned ${engineData.records.length} records; expected ${DATA_ENGINE_COUNT}.`);
+        }
 
-        const engineRecords = data.records.map(r => {
-            const branchCode = guessBranch(r.course || "");
+        // Translate FastAPI generator records to the Express bulk-ingest schema.
+        const engineRecords = engineData.records.map((record, index) => {
+            const branch = guessBranch(record.course || "");
             return {
-                apaar_id:       r.apaar  || "",
-                student_id:     r.sid    || "",
-                name:           r.name   || "",
-                institution_id: r.inst   || "",
-                branch:         branchCode,
-                admission_year: Number(r.year) || 2026,
-                is_tfw:         !!r.tfw,
-                is_ews:         !!r.ews,
-                is_nri:         !!r.nri,
-                is_fn:          !!r.fn,
-                has_consent:    r.consent !== false
+                apaar_id: String(record.apaar || "").trim(),
+                student_id: String(record.sid || `GEN-${index + 1}`).trim(),
+                name: String(record.name || "").trim(),
+                institution_id: String(record.inst || "").trim(),
+                branch: BRANCH_MAP[branch] ? branch : "OTH",
+                admission_year: Number(record.year) || new Date().getFullYear(),
+                is_tfw: !!record.tfw,
+                is_ews: !!record.ews,
+                is_nri: !!record.nri,
+                is_fn: !!record.fn,
+                has_consent: record.consent !== false,
+                is_supernumerary: !!record.sup,
+                ghost_flag: !!record.ghost_flag
             };
         });
 
-        // 2. Save to backend ledger
-        btn.innerText = "Saving to ledger...";
-        const CHUNK = 1000;
-        const totals = { inserted: 0, already_present: 0, invalid: 0 };
+        const invalidLocal = engineRecords.filter(record =>
+            record.apaar_id.length < 8 || !record.student_id || !record.name ||
+            !record.institution_id || !record.branch || !Number.isInteger(record.admission_year)
+        );
+        if (invalidLocal.length) {
+            throw new Error(`${invalidLocal.length} generated record(s) were incomplete; none were uploaded. Check the Data Engine response.`);
+        }
 
-        for (let i = 0; i < engineRecords.length; i += CHUNK) {
-            const chunk = engineRecords.slice(i, i + CHUNK);
-            msg.innerHTML = `<span class="tag tag-info">Saving to ledger: ${Math.min(i + CHUNK, engineRecords.length).toLocaleString()} / ${engineRecords.length.toLocaleString()}</span>`;
+        // The Express API permits up to 2,000 records per bulk request.
+        btn.textContent = "Saving to secure ledger...";
+        const totals = { inserted: 0, already_present: 0, invalid: 0, duplicate_in_batch: 0 };
+        const chunkSize = 1000;
 
-            const res = await fetch(`${API_BASE}/api/records/bulk-ingest`, {
-                method: 'POST',
+        for (let offset = 0; offset < engineRecords.length; offset += chunkSize) {
+            const chunk = engineRecords.slice(offset, offset + chunkSize).map(record => ({
+                apaar_id: record.apaar_id,
+                student_id: record.student_id,
+                name: record.name,
+                institution_id: record.institution_id,
+                branch: record.branch,
+                admission_year: record.admission_year,
+                is_tfw: record.is_tfw,
+                is_ews: record.is_ews,
+                is_nri: record.is_nri,
+                is_fn: record.is_fn,
+                has_consent: record.has_consent
+            }));
+
+            msg.innerHTML = `<span class="tag tag-info">Saving ${Math.min(offset + chunk.length, engineRecords.length)} / ${engineRecords.length} records to MongoDB ledger...</span>`;
+            const response = await fetch(`${API_BASE}/api/records/bulk-ingest`, {
+                method: "POST",
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${jwtToken}`
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${jwtToken}`
                 },
                 body: JSON.stringify({ records: chunk })
             });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(result.error || `Backend bulk-ingest error ${response.status}`);
+            }
 
-            const resData = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(resData.error || `Backend error ${res.status}`);
-
-            totals.inserted        += resData.inserted        || 0;
-            totals.already_present += resData.already_present || 0;
-            totals.invalid         += resData.invalid         || 0;
+            totals.inserted += Number(result.inserted || 0);
+            totals.already_present += Number(result.already_present || 0);
+            totals.invalid += Number(result.invalid || 0);
+            totals.duplicate_in_batch += Number(result.duplicate_in_batch || 0);
         }
 
-        // 3. Mirror records locally
-        const existingLocal = new Map(db.records.map(r => [`${r.apaar}|${r.inst}`, r]));
-        for (const r of engineRecords) {
-            const key = `${r.apaar_id}|${r.institution_id}`;
-            if (!existingLocal.has(key)) {
-                existingLocal.set(key, {
-                    apaar: r.apaar_id,
-                    sid: r.student_id,
-                    name: r.name,
-                    inst: r.institution_id,
-                    branch: r.branch,
-                    course: courseFor(r.branch) || r.branch,
-                    year: r.admission_year,
-                    tfw: r.is_tfw,
-                    ews: r.is_ews,
-                    nri: r.is_nri,
-                    fn: r.is_fn,
-                    sup: false,
-                    ghost_flag: false,
-                    consent: r.has_consent
+        // Update the browser's local dashboard mirror without replacing existing rows.
+        const localByKey = new Map(db.records.map(record => [`${record.apaar}|${record.inst}`, record]));
+        for (const record of engineRecords) {
+            const key = `${record.apaar_id}|${record.institution_id}`;
+            if (!localByKey.has(key)) {
+                localByKey.set(key, {
+                    apaar: record.apaar_id,
+                    sid: record.student_id,
+                    name: record.name,
+                    inst: record.institution_id,
+                    branch: record.branch,
+                    course: BRANCH_MAP[record.branch]?.deg
+                        ? `${BRANCH_MAP[record.branch].deg} ${BRANCH_MAP[record.branch].short}`
+                        : (BRANCH_MAP[record.branch]?.short || record.branch),
+                    year: record.admission_year,
+                    tfw: record.is_tfw,
+                    ews: record.is_ews,
+                    nri: record.is_nri,
+                    fn: record.is_fn,
+                    sup: record.is_supernumerary,
+                    ghost_flag: record.ghost_flag,
+                    consent: record.has_consent
                 });
             }
         }
-        db.records = [...existingLocal.values()];
-        
-        db.merkleRoot = data.merkle_root || "";
-        saveDB();
+        db.records = [...localByKey.values()];
+        db.merkleRoot = "";
+        db.merkleRootSource = "";
+
+        // Fetch the root from the actual Express/MongoDB ledger. Do not display
+        // the Data Engine's separate demo-tree root as if it were the ledger root.
+        const rootCandidate = engineRecords.find(record => record.has_consent);
+        if (rootCandidate) {
+            try {
+                const rootResponse = await fetch(
+                    `${API_BASE}/api/records/generate-qr/${encodeURIComponent(rootCandidate.apaar_id)}`,
+                    { method: "GET", headers: { "Accept": "application/json" }, cache: "no-store" }
+                );
+                const rootData = await rootResponse.json().catch(() => ({}));
+                if (rootResponse.ok && /^[a-f0-9]{64}$/i.test(rootData.merkle_root || "")) {
+                    db.merkleRoot = rootData.merkle_root;
+                    db.merkleRootSource = "BACKEND";
+                }
+            } catch (rootError) {
+                console.warn("Could not read the post-ingestion backend Merkle root:", rootError);
+            }
+        }
 
         logAudit(
             "MASS_INGESTION",
-            `Streamed ${engineRecords.length} records; ${totals.inserted} stored in ledger, ` +
-            `${totals.already_present} already present.`
+            `Data Engine generated ${engineRecords.length}; backend inserted ${totals.inserted}, ` +
+            `already present ${totals.already_present}, invalid ${totals.invalid}.`
         );
-
-        msg.innerHTML =
-            `<span class="tag tag-success">${totals.inserted.toLocaleString()} saved to ledger` +
-            (totals.already_present ? `, ${totals.already_present.toLocaleString()} already present` : "") +
-            (totals.invalid ? `, ${totals.invalid} skipped (invalid)` : "") +
-            `</span>`;
-
-        document.querySelector('[data-page="dash"]').click();
-        
-        setTimeout(() => {
-            const rootEl = document.getElementById("s-root");
-            if(rootEl) {
-                rootEl.innerText = db.merkleRoot
-                    ? db.merkleRoot.substring(0, 16) + "..."
-                    : "Computed via Backend";
-            }
-        }, 500);
+        saveDB();
 
         await updateDashboard();
         updateRecords();
+        navigateToPage("dash", true);
 
+        const engineSeconds = Number(engineData.time_taken_seconds);
+        const timingText = Number.isFinite(engineSeconds) ? ` Engine time: ${engineSeconds.toFixed(2)}s.` : "";
+        const rootText = db.merkleRootSource === "BACKEND" ? " Backend Merkle root refreshed." : " Backend root could not be fetched; dashboard shows its local hash.";
+        msg.innerHTML =
+            `<span class="tag tag-success">Generated ${engineRecords.length} records. Ledger inserted ${totals.inserted}; ` +
+            `${totals.already_present} already existed; ${totals.invalid} invalid.${escapeHTML(timingText + rootText)}</span>`;
+
+        showToast(
+            "300-record stream complete",
+            `${totals.inserted} new records saved; ${totals.already_present} were already present.`,
+            "success"
+        );
     } catch (error) {
-        console.error("Stream/sync failed:", error);
-        const userMsg = error.name === 'AbortError'
-            ? "Data Engine request timed out. Retry after checking its Render service status."
-            : error.message;
-        msg.innerHTML = `<span class="tag tag-danger">Failed: ${escapeHTML(userMsg)}</span>`;
+        console.error("Data Engine stream/sync failed:", error);
+        const message = error.name === "AbortError"
+            ? "The Data Engine request timed out while Render was starting. Please retry."
+            : (error.message || "Unable to generate records.");
+        msg.innerHTML = `<span class="tag tag-danger">${escapeHTML(message)}</span>`;
+        showToast("Data Engine Error", message, "danger");
     } finally {
-        btn.innerText = "Stream 300 Records";
         btn.disabled = false;
+        btn.textContent = "Stream 300 Records";
     }
 });
 
@@ -2255,13 +2376,6 @@ document.addEventListener("click", async (e) => {
         obs.observe(t, { childList: true, subtree: true });
     });
 })();
-
-// Wake both Render services on page load
-(function pingBackend() {
-    fetch(`${API_BASE}/health`,  { method: 'GET' }).catch(() => {});
-    fetch(`${API_BASE_URL}/`,    { method: 'GET' }).catch(() => {});
-})();
-
 
 // ======================================================================
 // MISSING UI FEATURES — DEMO-ONLY ACTIONS / REPORTS / CHARTS / REVIEW QUEUE

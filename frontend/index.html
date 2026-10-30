@@ -8,6 +8,7 @@
     <meta name="description" content="AICTE-PRAMAAN Digital Seat-Pass System">
     <title>AICTE-PRAMAAN - Seat-Pass System</title>
 
+    <link rel="icon" type="image/svg+xml" href="assets/aicte-logo.svg">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="interaction-fixes.css">
 
@@ -138,6 +139,7 @@
             }
         }
     </style>
+    <link rel="stylesheet" href="responsive-browser-fixes.css">
 </head>
 
 <body data-role="aicte">
@@ -150,7 +152,7 @@
 
             <!-- Brand -->
             <div class="brand">
-                <div class="logo-box">A</div>
+                <div class="logo-box"><img src="assets/aicte-logo.svg" alt="AICTE emblem" width="38" height="38"></div>
                 <div>
                     <h1>AICTE-PRAMAAN</h1>
                     <span class="badge">Seat-Pass System</span>
@@ -726,6 +728,9 @@
             overlay.setAttribute("aria-hidden", "true");
         }
     }
+
+    // Allow app.js browser-history navigation to close the mobile drawer.
+    window.closeMobileNavigation = closeMenu;
 
     function toggleMenu() {
         if (!mobileQuery.matches) {

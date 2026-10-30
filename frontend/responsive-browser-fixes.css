@@ -1,0 +1,169 @@
+/* AICTE-PRAMAAN mobile layout, text wrapping, and browser-like navigation fixes.
+   Keep the existing style.css. This file is intentionally loaded after it. */
+
+ :root { color-scheme: light; }
+.logo-box {
+    background: #ffffff !important;
+    padding: 2px;
+    border: 1px solid #e3e3dc;
+    box-shadow: 0 2px 8px rgba(0,0,0,.16) !important;
+}
+.logo-box img { display: block; width: 100%; height: 100%; object-fit: contain; }
+html, body { width: 100%; min-width: 320px; max-width: 100%; }
+body { overflow-x: hidden; }
+.layout, .canvas, .content-area, .page { min-width: 0; max-width: 100%; }
+.canvas { min-height: 0; }
+.content-area { min-height: 0; overflow-x: hidden; }
+
+/* Stop long IDs, hashes, URLs, and generated text from escaping cards. */
+.depth-card, .demo-panel, .stat-card, .matrix-cell, .card-head,
+.page-head, .form-grid, .input-group, .action-row, .export-panel,
+.export-actions, .verify-container, .verify-box, .modal-box,
+.josaa-header, .josaa-log-panel, .notice, .paper, .paper * {
+    min-width: 0;
+    max-width: 100%;
+}
+.depth-card, .demo-panel, .page, .content-area,
+.depth-card p, .depth-card h3, .helper-text, .msg,
+.paper, .kv dd, .mono, .sub, .resp-cell, .fuzzy-card,
+.eg-d, .eg-lede {
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+.depth-input, input, select, textarea { max-width: 100%; min-width: 0; }
+button, .depth-btn, .demo-scenario-btn { max-width: 100%; }
+svg, img, canvas { max-width: 100%; }
+
+/* The drawer must cover the hamburger while it is open; otherwise the icon
+   appears to float over the sidebar and remains an accidental click target. */
+@media (max-width: 1024px) {
+    .nav-toggle, #nav-toggle {
+        position: relative !important;
+        z-index: 998 !important;
+    }
+    #nav-overlay, .nav-overlay { z-index: 1000 !important; }
+    #sidebar, .sidebar { z-index: 1001 !important; }
+    body.nav-open #nav-toggle {
+        visibility: hidden;
+        pointer-events: none;
+    }
+    body.nav-open #nav-overlay { pointer-events: auto; }
+    .layout { height: calc(100dvh - 3px); }
+    .canvas { height: calc(100dvh - 3px); }
+    .content-area {
+        flex: 1 1 auto;
+        width: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+    }
+    .topbar { min-width: 0; }
+    .topbar h2 { min-width: 0; overflow-wrap: anywhere; }
+}
+
+/* Medium and small screens: keep cards and controls inside the viewport. */
+@media (max-width: 760px) {
+    .content-area { padding: 15px 12px 30px !important; }
+    .depth-card { padding: 15px 12px; border-radius: 7px; }
+    .depth-card.flush { padding: 0; }
+    .demo-panel { padding: 14px 12px; }
+    .demo-panel-header, .josaa-header, .export-panel {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .demo-panel-sub, .helper-text, .muted, .stat-trend { white-space: normal; }
+    .demo-btn-row { display: grid; grid-template-columns: minmax(0, 1fr); }
+    .demo-scenario-btn {
+        width: 100%;
+        min-width: 0;
+        white-space: normal;
+        text-align: left;
+        overflow-wrap: anywhere;
+    }
+    .form-grid, .split-grid, .cols { grid-template-columns: minmax(0, 1fr) !important; }
+    .input-group label { white-space: normal; overflow-wrap: anywhere; }
+    .action-row { align-items: stretch; }
+    .action-row .depth-btn { width: 100%; white-space: normal; }
+    .export-actions { width: 100%; flex-direction: column; }
+    .export-actions .depth-btn { width: 100%; white-space: normal; }
+    .josaa-header .depth-btn { width: 100%; white-space: normal; }
+    .card-head { align-items: flex-start; flex-direction: column; }
+    .card-head h3 { white-space: normal; overflow-wrap: anywhere; }
+    .paper { margin: 8px; padding: 17px 12px; }
+    .paper .row, .paper .ft { flex-direction: column; align-items: stretch; }
+    .paper .ids { width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+    .paper .nm { max-width: 100%; font-size: 22px; padding: 0 7px; overflow-wrap: anywhere; }
+    .verify-box { padding: 22px 13px; }
+    .verify-input-row { flex-direction: column; }
+    .verify-input-row .large-btn { width: 100%; min-height: 44px; }
+    .chart-container { min-width: 0; width: 100%; }
+    .toast-container { left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); }
+    .toast { min-width: 0; width: 100%; max-width: none; overflow-wrap: anywhere; }
+
+    /* Responsive table cards: labels and values share width and wrap freely. */
+    table.rtable, table.rtable tbody { width: 100%; min-width: 0 !important; }
+    .rtable tr { width: 100%; min-width: 0; }
+    .rtable td,
+    #inst-table.rtable td:first-child,
+    #batch-table.rtable td:first-child,
+    #rec-table.rtable td:first-child,
+    #anom-table.rtable td:first-child,
+    #live-flags.rtable td:first-child,
+    #review-table.rtable td:first-child,
+    #audit-table.rtable td:first-child {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        align-items: flex-start !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+        word-break: normal !important;
+    }
+    .rtable td::before {
+        flex: 0 0 34% !important;
+        max-width: 34% !important;
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+    .rtable .cv {
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
+        max-width: 66% !important;
+        overflow-wrap: anywhere !important;
+        word-break: normal !important;
+        white-space: normal !important;
+    }
+    .rtable td .sub, .rtable td .mono, .rtable td .tag, .rtable td .chip {
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+    }
+    .rtable td[colspan] { display: block !important; }
+}
+
+@media (max-width: 420px) {
+    .topbar { padding: 0 9px !important; gap: 8px !important; }
+    .topbar h2 { font-size: 14px !important; }
+    .content-area { padding: 12px 8px 24px !important; }
+    .depth-card { padding: 13px 10px; }
+    .depth-card.flush { padding: 0; }
+    .stat-value, .mv { font-size: 22px; }
+    .demo-panel-title { font-size: 13px; }
+    .status-pill { white-space: normal; }
+    .kv { grid-template-columns: minmax(0, 1fr) !important; gap: 2px 10px; }
+    .kv dd { min-width: 0; }
+    .rtable td { padding: 8px 9px !important; gap: 7px !important; }
+    .rtable td::before { flex-basis: 32% !important; max-width: 32% !important; font-size: 9px !important; }
+    .rtable .cv { max-width: 68% !important; font-size: 12px; }
+    #entry-switch { right: 10px; bottom: 10px; }
+}
+
+@media (max-width: 350px) {
+    .content-area { padding-left: 6px !important; padding-right: 6px !important; }
+    .depth-card { padding-left: 8px; padding-right: 8px; }
+    .rtable td::before { flex-basis: 30% !important; max-width: 30% !important; }
+    .rtable .cv { max-width: 70% !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

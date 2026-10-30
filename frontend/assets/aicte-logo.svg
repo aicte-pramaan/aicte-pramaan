@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+<title id="title">AICTE-inspired education and technology emblem</title>
+<desc id="desc">A golden gear surrounding a navy circle with a tricolour knowledge flame and lamp.</desc>
+<path d="M 64.00,14.00 L 69.88,4.29 L 75.71,5.15 L 78.51,16.15 L 83.13,17.81 L 92.28,11.08 L 97.33,14.11 L 95.72,25.35 L 99.36,28.64 L 110.38,25.94 L 113.89,30.67 L 108.10,40.43 L 110.19,44.87 L 121.42,46.58 L 122.85,52.29 L 113.76,59.10 L 114.00,64.00 L 123.71,69.88 L 122.85,75.71 L 111.85,78.51 L 110.19,83.13 L 116.92,92.28 L 113.89,97.33 L 102.65,95.72 L 99.36,99.36 L 102.06,110.38 L 97.33,113.89 L 87.57,108.10 L 83.13,110.19 L 81.42,121.42 L 75.71,122.85 L 68.90,113.76 L 64.00,114.00 L 58.12,123.71 L 52.29,122.85 L 49.49,111.85 L 44.87,110.19 L 35.72,116.92 L 30.67,113.89 L 32.28,102.65 L 28.64,99.36 L 17.62,102.06 L 14.11,97.33 L 19.90,87.57 L 17.81,83.13 L 6.58,81.42 L 5.15,75.71 L 14.24,68.90 L 14.00,64.00 L 4.29,58.12 L 5.15,52.29 L 16.15,49.49 L 17.81,44.87 L 11.08,35.72 L 14.11,30.67 L 25.35,32.28 L 28.64,28.64 L 25.94,17.62 L 30.67,14.11 L 40.43,19.90 L 44.87,17.81 L 46.58,6.58 L 52.29,5.15 L 59.10,14.24 Z" fill="#e4a52e" stroke="#b97b18" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="64" cy="64" r="39" fill="#173d78" stroke="#f6d88b" stroke-width="3"/>
+<circle cx="64" cy="64" r="33" fill="none" stroke="#ffffff" stroke-opacity=".25" stroke-width="1.4"/>
+<path d="M45 77 Q64 88 83 77 L78 85 Q64 92 50 85 Z" fill="#f4c65d" stroke="#fff1c4" stroke-width="1.7" stroke-linejoin="round"/>
+<path d="M64 73 C52 59 61 49 64 36 C72 50 77 59 64 73 Z" fill="#ef493b" stroke="#ffe0aa" stroke-width="1.7"/>
+<path d="M61 72 C48 71 43 66 42 60 C54 60 60 64 61 72 Z" fill="#f3bf38" stroke="#fff1c4" stroke-width="1.4"/>
+<path d="M67 72 C80 71 85 66 86 60 C74 60 68 64 67 72 Z" fill="#198b56" stroke="#fff1c4" stroke-width="1.4"/>
+<path d="M53 89 Q64 94 75 89" fill="none" stroke="#fff1c4" stroke-width="2" stroke-linecap="round"/>
+</svg>
