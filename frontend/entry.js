@@ -103,6 +103,21 @@
     }
 
     function openTwoFactor(recordHistory) {
+        // Wake a sleeping Render instance while the user enters the OTP.
+        // This request is non-blocking; the login POST remains authoritative.
+        if (typeof window.warmAicteBackend === "function") {
+            var status = document.getElementById("signin-status");
+            if (status) status.textContent = "Connecting to the AICTE backend while you enter the code…";
+            window.warmAicteBackend().then(function (reachable) {
+                var currentStatus = document.getElementById("signin-status");
+                var currentModal = document.getElementById("m-2fa");
+                if (currentStatus && currentModal && !currentModal.classList.contains("hidden")) {
+                    currentStatus.textContent = reachable
+                        ? "Backend is reachable. Enter demo code 123456 to continue."
+                        : "Backend warm-up did not respond; sign-in will still attempt the login request.";
+                }
+            });
+        }
         var modal = document.getElementById("m-2fa");
         if (!modal) {
             waiting = false;
@@ -186,6 +201,9 @@
     }
 
     function init() {
+        if (typeof window.warmAicteBackend === "function") {
+            window.warmAicteBackend();
+        }
         if (typeof window.applyRole !== "function") {
             console.warn("entry.js: app.js must load first.");
             return;

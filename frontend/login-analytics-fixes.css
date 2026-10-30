@@ -1,0 +1,182 @@
+/* AICTE-PRAMAAN — Analytics, sign-in modal and ingestion feed fixes.
+   Loaded after style.css and responsive-browser-fixes.css. */
+
+/* The responsive base stylesheet applies max-width:100% to every .modal-box.
+   Give the sign-in modal its intended centred card width again. */
+#m-2fa.modal-overlay {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(12px, 3vw, 28px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+#m-2fa .modal-box {
+    display: block;
+    flex: 0 1 440px;
+    width: min(440px, calc(100vw - 32px)) !important;
+    min-width: 0 !important;
+    max-width: 440px !important;
+    max-height: min(90dvh, 680px);
+    margin: auto;
+    padding: clamp(20px, 4vw, 32px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-radius: 10px;
+}
+
+#m-2fa .otp-inputs {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: clamp(5px, 1.8vw, 9px);
+    width: min(100%, 320px);
+    margin: 18px auto;
+}
+
+#m-2fa .otp-input {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 48px;
+    height: clamp(42px, 12vw, 52px);
+    min-height: 42px;
+    margin: 0 auto;
+    padding: 0;
+    text-align: center;
+    font-size: clamp(18px, 5vw, 22px);
+    line-height: 1;
+    box-sizing: border-box;
+    -webkit-appearance: none;
+    appearance: none;
+    caret-color: var(--navy, #23398a);
+}
+
+#m-2fa .action-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: stretch;
+}
+
+#m-2fa .action-row .depth-btn {
+    min-width: 0;
+    min-height: 44px;
+    white-space: normal;
+}
+
+#signin-status {
+    min-height: 1.5em;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+/* Chart containers must have a real height for Chart.js responsive canvases. */
+#impact .chart-container {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    height: 260px;
+}
+#impact .chart-container canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100%;
+}
+#impact .chart-container[data-chart-error]::after {
+    content: attr(data-chart-error);
+    display: block;
+    padding: 12px;
+    color: #9a3412;
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: center;
+}
+#impact .chart-container[data-chart-error] canvas { display: none !important; }
+#impact .split-grid,
+#impact .cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.batch-feed-head {
+    align-items: center;
+}
+.batch-feed-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+    min-width: 0;
+}
+#batch-feed-status {
+    display: inline-block;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+#batch-refresh-btn {
+    min-height: 36px;
+}
+
+@media (max-width: 600px) {
+    #m-2fa.modal-overlay { padding: 10px; }
+    #m-2fa .modal-box {
+        flex-basis: auto;
+        width: calc(100vw - 20px) !important;
+        max-width: 440px !important;
+        max-height: calc(100dvh - 20px);
+        padding: 20px 15px;
+    }
+    #m-2fa .otp-inputs {
+        width: 100%;
+        max-width: 320px;
+        gap: 6px;
+    }
+    #m-2fa .otp-input {
+        max-width: none;
+        height: 46px;
+        min-height: 42px;
+        font-size: 20px;
+    }
+    #m-2fa .action-row {
+        grid-template-columns: minmax(0, 1fr);
+        margin-top: 16px;
+    }
+    #m-2fa .action-row .depth-btn { width: 100%; }
+    #impact .chart-container { height: 230px; }
+    #impact .split-grid,
+    #impact .cols { grid-template-columns: minmax(0, 1fr) !important; }
+    .batch-feed-head { align-items: stretch; }
+    .batch-feed-toolbar {
+        width: 100%;
+        justify-content: space-between;
+        align-items: stretch;
+        flex-direction: column;
+    }
+    #batch-refresh-btn { width: 100%; }
+}
+
+@media (max-width: 360px) {
+    #m-2fa .modal-box { padding: 18px 12px; }
+    #m-2fa .otp-inputs { gap: 4px; }
+    #m-2fa .otp-input { height: 42px; font-size: 18px; }
+}
+
+.analytics-toolbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 14px;
+    min-width: 0;
+}
+.analytics-toolbar .page-head { min-width: 0; }
+.analytics-toolbar .depth-btn { flex: 0 0 auto; }
+@media (max-width: 600px) {
+    .analytics-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+    .analytics-toolbar .depth-btn { width: 100%; }
+}

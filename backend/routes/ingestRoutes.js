@@ -62,6 +62,67 @@ async function findRecordByApaarId(value) {
 
 
 // ============================================================
+// RECENT INGESTION ACTIVITY — authenticated MongoDB ledger feed
+// Returns only fields needed by the operational batch activity table.
+// APAAR itself is never returned; the reference is derived from its HMAC.
+// ============================================================
+router.get(
+    '/recent-ingestion',
+    authenticateToken,
+    requireRole(['AICTE', 'INSTITUTION']),
+    async (req, res) => {
+        try {
+            const requestedLimit = Number.parseInt(req.query.limit, 10);
+            const limit = Number.isInteger(requestedLimit)
+                ? Math.min(100, Math.max(1, requestedLimit))
+                : 40;
+
+            // INSTITUTION tokens are scoped to their username (e.g. INST001).
+            const filter = req.user.role === 'INSTITUTION'
+                ? { institution_id: req.user.username }
+                : {};
+
+            const records = await StudentRecord.find(filter)
+                .sort({ createdAt: -1, _id: -1 })
+                .limit(limit)
+                .select('apaar_hmac student_id name institution_id branch admission_year is_tfw is_ews is_nri is_fn createdAt')
+                .lean();
+
+            return res.json({
+                status: 'success',
+                count: records.length,
+                records: records.map(record => {
+                    const createdAt = record.createdAt ||
+                        (record._id && typeof record._id.getTimestamp === 'function'
+                            ? record._id.getTimestamp()
+                            : null);
+                    const quota = [];
+                    if (record.is_tfw) quota.push('TFW');
+                    if (record.is_ews) quota.push('EWS');
+                    if (record.is_nri) quota.push('NRI');
+                    if (record.is_fn) quota.push('Foreign');
+
+                    return {
+                        reference: `REC-${String(record.apaar_hmac || '').slice(-8).toUpperCase()}`,
+                        student_id: record.student_id,
+                        name: record.name,
+                        institution_id: record.institution_id,
+                        branch: record.branch,
+                        admission_year: record.admission_year,
+                        category: quota.length ? quota.join(' / ') : 'Regular',
+                        status: 'Committed',
+                        created_at: createdAt ? new Date(createdAt).toISOString() : null
+                    };
+                })
+            });
+        } catch (error) {
+            console.error('RECENT_INGESTION_FEED_ERROR:', error);
+            return res.status(500).json({ error: 'Unable to load recent ledger activity.' });
+        }
+    }
+);
+
+// ============================================================
 // 1. INGEST RECORD
 // ============================================================
 

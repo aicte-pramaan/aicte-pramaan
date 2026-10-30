@@ -1,4 +1,13 @@
 const API_BASE = "https://aicte-pramaan-api.onrender.com";
+let backendWarmupPromise = null;
+window.warmAicteBackend = function warmAicteBackend() {
+    if (backendWarmupPromise) return backendWarmupPromise;
+    backendWarmupPromise = fetch(`${API_BASE}/api/data`, { method: "GET", cache: "no-store" })
+        .then(response => response.ok)
+        .catch(() => false)
+        .finally(() => { backendWarmupPromise = null; });
+    return backendWarmupPromise;
+};
 const TRUSTED_ED25519_PUBLIC_KEY =
     "b4d6a4f061910c638906414e99cc6a8e0dae3e947ccb9557165c35dd08a8ba63";
 let jwtToken = ""; // In-memory backend JWT session token
@@ -707,6 +716,10 @@ function updateSeatHint() {
 
 let renderPage = function(p) {
     if (p === "dash") updateDashboard();
+    if (p === "upload") {
+        updateSeatHint();
+        refreshIngestionActivity();
+    }
     if (p === "records") updateRecords();
     if (p === "audit") updateAudit();
     if (p === "vigilance") {
@@ -714,6 +727,9 @@ let renderPage = function(p) {
         initVigilanceCharts();
         renderFuzzyMatches();
     }
+    // updateAnalyticsData now creates charts on first visit and refreshes
+    // them on subsequent visits. Previously it returned before any chart
+    // existed, leaving the Analytics page permanently blank.
     if (p === "impact") updateAnalyticsData();
     if (p === "review") renderReviewQueue();
 }
@@ -859,7 +875,9 @@ el("btn-2fa-verify").addEventListener("click", async () => {
     const isInstitution = pendingRole === "institution";
     const expectedApiRole = isInstitution ? "INSTITUTION" : "AICTE";
     btn.disabled = true;
-    btn.textContent = "Verifying sign-in…";
+    btn.textContent = "Connecting & verifying…";
+    const signInStatus = el("signin-status");
+    if (signInStatus) signInStatus.textContent = "Sending your sign-in request to the AICTE backend…";
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 60000);
@@ -886,6 +904,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
 
         jwtToken = data.access_token;
         jwtRole = data.role;
+        if (signInStatus) signInStatus.textContent = "Authentication successful.";
         el("m-2fa")?.classList.add("hidden");
         if (typeof window.completeEntrySignInStep === "function") window.completeEntrySignInStep();
         el("role").value = pendingRole;
@@ -896,6 +915,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
         const message = error.name === "AbortError"
             ? "Sign-in timed out. The Render API may be starting; retry."
             : error.message || "Unable to sign in.";
+        if (signInStatus) signInStatus.textContent = message;
         showToast("Sign-in failed", message, "danger");
     } finally {
         window.clearTimeout(timeout);
@@ -989,7 +1009,19 @@ el("add-btn").addEventListener("click", async () => {
     };
 
     if (recordPayload.apaar_id.length < 8) {
-        msgEl.textContent = "Enter a valid APAAR or provisional ID.";
+        const validationMessage = "Enter a valid APAAR or provisional ID.";
+        recordBatchEvent({
+            apaar_id: recordPayload.apaar_id,
+            student_id: recordPayload.student_id,
+            name: recordPayload.name,
+            institution_id: recordPayload.institution_id,
+            branch: recordPayload.branch,
+            category: quotaCategory(recordPayload),
+            response: validationMessage,
+            status: "Rejected",
+            source: "Browser form validation"
+        });
+        msgEl.textContent = validationMessage;
         msgEl.className = "msg mt-16 tag tag-danger";
         return;
     }
@@ -1001,7 +1033,19 @@ el("add-btn").addEventListener("click", async () => {
         !recordPayload.branch ||
         !Number.isInteger(recordPayload.admission_year)
     ) {
-        msgEl.textContent = "Complete all required fields.";
+        const validationMessage = "Complete all required fields.";
+        recordBatchEvent({
+            apaar_id: recordPayload.apaar_id,
+            student_id: recordPayload.student_id,
+            name: recordPayload.name,
+            institution_id: recordPayload.institution_id,
+            branch: recordPayload.branch,
+            category: quotaCategory(recordPayload),
+            response: validationMessage,
+            status: "Rejected",
+            source: "Browser form validation"
+        });
+        msgEl.textContent = validationMessage;
         msgEl.className = "msg mt-16 tag tag-danger";
         return;
     }
@@ -1012,6 +1056,17 @@ el("add-btn").addEventListener("click", async () => {
     try {
         // Backend is the source of truth.
         const data = await postRecordToLedger(recordPayload);
+        recordBatchEvent({
+            apaar_id: recordPayload.apaar_id,
+            student_id: recordPayload.student_id,
+            name: recordPayload.name,
+            institution_id: recordPayload.institution_id,
+            branch: recordPayload.branch,
+            category: quotaCategory(recordPayload),
+            response: data.message || `Backend accepted the record at Merkle leaf ${data.index}.`,
+            status: "Committed",
+            source: "Single-record API ingestion"
+        });
 
         // Update local Registry only after backend success.
         const localRecord = {
@@ -1040,6 +1095,7 @@ el("add-btn").addEventListener("click", async () => {
             console.warn("Local Registry update failed:", localResult.msg);
         }
 
+        await refreshIngestionActivity(false);
         await updateDashboard();
         updateRecords();
         updateSeatHint();
@@ -1089,6 +1145,17 @@ el("add-btn").addEventListener("click", async () => {
         });
 
     } catch (error) {
+        recordBatchEvent({
+            apaar_id: recordPayload.apaar_id,
+            student_id: recordPayload.student_id,
+            name: recordPayload.name,
+            institution_id: recordPayload.institution_id,
+            branch: recordPayload.branch,
+            category: quotaCategory(recordPayload),
+            response: error.message || "Backend rejected the record.",
+            status: "Rejected",
+            source: "Single-record API ingestion"
+        });
         console.error("INGESTION ERROR:", error);
 
         msgEl.textContent = error.message;
@@ -1153,6 +1220,17 @@ el("csv-btn").addEventListener("click", async () => {
 
             if (parts.length < 11) {
                 errors++;
+                recordBatchEvent({
+                    apaar_id: parts[0] || "",
+                    student_id: parts[1] || "—",
+                    name: parts[2] || "—",
+                    institution_id: parts[3] || "—",
+                    branch: parts[4] || "—",
+                    category: "CSV row",
+                    response: `Expected at least 11 comma-separated columns; received ${parts.length}.`,
+                    status: "Skipped",
+                    source: "CSV validation"
+                });
                 continue;
             }
 
@@ -1186,7 +1264,18 @@ el("csv-btn").addEventListener("click", async () => {
             try {
                 btn.innerText = `Uploading ${i + 1}/${lines.length}...`;
 
-                await postRecordToLedger(payload);
+                const backendResult = await postRecordToLedger(payload);
+                recordBatchEvent({
+                    apaar_id: payload.apaar_id,
+                    student_id: payload.student_id,
+                    name: payload.name,
+                    institution_id: payload.institution_id,
+                    branch: payload.branch,
+                    category: quotaCategory(payload),
+                    response: backendResult.message || `Backend accepted CSV record ${i + 1} of ${lines.length}.`,
+                    status: "Committed",
+                    source: "CSV bulk workflow"
+                });
 
                 const result = processRecord({
                     apaar: apaarId,
@@ -1216,9 +1305,21 @@ el("csv-btn").addEventListener("click", async () => {
             } catch (error) {
                 errors++;
                 failures.push(`${apaarId}: ${error.message}`);
+                recordBatchEvent({
+                    apaar_id: apaarId,
+                    student_id: payload.student_id,
+                    name: payload.name,
+                    institution_id: payload.institution_id,
+                    branch: payload.branch,
+                    category: quotaCategory(payload),
+                    response: error.message || "Backend rejected the CSV row.",
+                    status: "Rejected",
+                    source: "CSV bulk workflow"
+                });
             }
         }
 
+        await refreshIngestionActivity(false);
         await updateDashboard();
         updateRecords();
         updateSeatHint();
@@ -1266,14 +1367,6 @@ const ICON = {
     shield: '<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M7.467.133a1.75 1.75 0 0 1 1.066 0l5.25 1.68A1.75 1.75 0 0 1 15 3.48V7c0 1.566-.32 3.182-1.303 4.682-.983 1.498-2.585 2.813-5.032 3.855a1.7 1.7 0 0 1-1.33 0c-2.447-1.042-4.049-2.357-5.032-3.855C1.32 10.182 1 8.566 1 7V3.48a1.75 1.75 0 0 1 1.217-1.667zm.61 1.429a.25.25 0 0 0-.153 0l-5.25 1.68a.25.25 0 0 0-.174.238V7c0 1.358.275 2.666 1.057 3.86.784 1.194 2.121 2.34 4.366 3.297a.2.2 0 0 0 .154 0c2.245-.956 3.582-2.104 4.366-3.298C13.225 9.666 13.5 8.36 13.5 7V3.48a.25.25 0 0 0-.174-.237z"/></svg>'
 };
 
-const BATCH = [
-    { id: "4829-1049-8821", sid: "2026CSE001", nm: "Aarav Sharma", cat: "CORE_MERIT", r: "NAD/DigiLocker API: 200 OK (Demographics Matched)", s: ["Committed", "ok"] },
-    { id: "7391-5520-1940", sid: "2026CSE121", nm: "Priyanshu Verma", cat: "TFW_SUPERNUMERARY", r: "QUOTA_STUFFING_BLOCKED: Core Intake (120/120) full; domestic candidate without TFW income certificate cannot occupy supernumerary slot", s: ["Hard rejected", "er"], bad: 1 },
-    { id: "PROV-FN-NPL-88210", sub: "Passport: PA8492011", sid: "2026CSE-FN04", nm: "Siddhartha Thapa (Nepal)", cat: "FN_SUPERNUMERARY", r: "NAD/FRRO Bridge: FRRO Visa #V99201 Verified (Aadhaar Exempt Track)", s: ["Provisional locked", "in"] },
-    { id: "9912-3049-1102", sid: "2026CSE089", nm: "Rohan Deshmukh", cat: "CORE_MERIT", r: "CROSS_STATE_DUPLICATE: Active Regular B.Tech seat found at VJTI Mumbai (AICTE ID: 1-339102). Placed in 72h Counseling Seat-Transfer Escrow", s: ["Escrow hold · 48h left", "wn"], bad: 1 },
-    { id: "6610-8492-3319", sid: "2026CSE094", nm: "Sneha Kulkarni", cat: "DUAL_DEGREE", r: "NEP-2020 Dual Enrolment Check: Concurrent registration at IGNOU (Mode: ODL/Online) permitted", s: ["Committed", "ok"] },
-    { id: "5521-0087-4410", sid: "2026CSE112", nm: "Ananya Iyer", cat: "NRI_QUOTA", r: "NAD/DigiLocker API: 200 OK · NRI sponsor affidavit and FIRC remittance proof verified", s: ["Committed", "ok"] }
-];
 const KPIS = [
     ["Total verified APAAR enrolments", "14,82,910", ""],
     ["Institutions synced", "8,412", " / 8,540"],
@@ -1334,26 +1427,180 @@ function renderIngHead() {
     const y = Number(yearInput.value) || 2026;
     const b = BRANCH_MAP[branchSelect.value] || BRANCH_MAP.CSE;
     target.innerHTML = `<h2>${escapeHTML(inst.name)} ${pill("AICTE Approved", "ok")}</h2>
-        <p><span class="mono">Institute: ${escapeHTML(inst.id)}</span> · ${escapeHTML(b.name)} · AY ${y}-${String(y + 1).slice(-2)} · Batch Sync #8841 <span class="muted">(Polars Engine: 1,240 records processed in 0.84s)</span></p>`;
+        <p><span class="mono">Institute: ${escapeHTML(inst.id)}</span> · ${escapeHTML(b.name)} · AY ${y}-${String(y + 1).slice(-2)} · <span class="muted">Authenticated submissions are recorded in the MongoDB activity feed below.</span></p>`;
 }
 
-function renderBatch() {
-    let html = `<tr><th>APAAR / Surrogate ID</th><th>Student ID</th><th>Name</th><th>Category</th><th>Gateway Response</th><th>Status</th></tr>`;
-    BATCH.forEach(r => {
-        const i = r.r.indexOf(": ");
-        const code = escapeHTML(r.r.slice(0, i)), msg = escapeHTML(r.r.slice(i + 2));
-        const cls = r.bad ? ` rc-${r.s[1]}` : "";
-        html += `<tr>
-            <td class="mono nw">${escapeHTML(r.id)}${r.sub ? `<span class="sub">${escapeHTML(r.sub)}</span>` : ""}</td>
-            <td class="mono nw">${escapeHTML(r.sid)}</td>
-            <td>${escapeHTML(r.nm)}</td>
-            <td><span class="chip">${escapeHTML(r.cat)}</span></td>
-            <td class="resp-cell"><code class="rc${cls}">${code}</code> ${msg}</td>
-            <td>${pill(r.s[0], r.s[1])}</td>
-        </tr>`;
-    });
-    el("batch-table").innerHTML = html;
+// Real ingestion activity. Successful records are fetched from the authenticated
+// MongoDB ledger endpoint; failed/skipped attempts are kept in this browser so
+// validation discrepancies are not lost when the server rejects a submission.
+const BATCH_EVENTS_KEY = "aicte_pramaan_ingestion_events_v2";
+const BATCH_EVENT_LIMIT = 80;
+let batchFeedRecords = [];
+let batchFeedInFlight = false;
+let batchFeedTimer = null;
+let batchFeedLastUpdated = null;
+let batchFeedError = "";
+
+function loadBatchEvents() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(BATCH_EVENTS_KEY) || "[]");
+        return Array.isArray(parsed) ? parsed.slice(0, BATCH_EVENT_LIMIT) : [];
+    } catch (_) {
+        return [];
+    }
 }
+
+let batchEvents = loadBatchEvents();
+
+function recordBatchEvent(input) {
+    const item = {
+        event_id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        reference: input.apaar_id ? `LOCAL-…${String(input.apaar_id).slice(-4)}` : (input.reference || "—"),
+        student_id: String(input.student_id || "—"),
+        name: String(input.name || "—"),
+        institution_id: String(input.institution_id || "—"),
+        branch: String(input.branch || "—"),
+        category: String(input.category || "Admission"),
+        response: String(input.response || "No response detail supplied"),
+        status: String(input.status || "Checked"),
+        created_at: new Date().toISOString(),
+        source: String(input.source || "Browser submission")
+    };
+    batchEvents.unshift(item);
+    batchEvents = batchEvents.slice(0, BATCH_EVENT_LIMIT);
+    try { localStorage.setItem(BATCH_EVENTS_KEY, JSON.stringify(batchEvents)); } catch (_) {}
+    renderBatchActivity();
+}
+
+function quotaCategory(record) {
+    const labels = [];
+    if (record.is_tfw ?? record.tfw) labels.push("TFW");
+    if (record.is_ews ?? record.ews) labels.push("EWS");
+    if (record.is_nri ?? record.nri) labels.push("NRI");
+    if (record.is_fn ?? record.fn) labels.push("Foreign");
+    return labels.length ? labels.join(" / ") : "Regular";
+}
+
+function renderBatchActivity() {
+    const table = el("batch-table");
+    if (!table) return;
+
+    const activeRole = document.body.getAttribute("data-role") || "aicte";
+    const visibleFeedRecords = (Array.isArray(batchFeedRecords) ? batchFeedRecords : [])
+        .filter(record => activeRole !== "institution" || record.institution_id === "INST001");
+    const remoteRows = visibleFeedRecords.map(record => ({
+        reference: record.reference || "Ledger record",
+        student_id: record.student_id || "—",
+        name: record.name || "—",
+        institution_id: record.institution_id || "—",
+        branch: record.branch || "—",
+        category: record.category || quotaCategory(record),
+        response: "MongoDB ledger confirmed this record as stored.",
+        status: "Committed",
+        created_at: record.created_at || null,
+        source: "MongoDB ledger",
+        key: `${record.student_id || ""}|${record.institution_id || ""}`
+    }));
+
+    // Keep local rejections/skips, plus successful browser submissions that
+    // have not appeared in the latest server page yet. De-duplicate commits.
+    const remoteKeys = new Set(remoteRows.map(row => row.key));
+    const localRows = batchEvents
+        .filter(event => activeRole !== "institution" || event.institution_id === "INST001")
+        .filter(event => {
+            const key = `${event.student_id || ""}|${event.institution_id || ""}`;
+            return event.status !== "Committed" || !remoteKeys.has(key);
+        })
+        .map(event => ({ ...event, key: `${event.student_id || ""}|${event.institution_id || ""}` }));
+
+    const rows = [...localRows, ...remoteRows].sort((a, b) => {
+        const at = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bt - at;
+    }).slice(0, 40);
+
+    let html = `<tr><th>Reference</th><th>Student ID</th><th>Name</th><th>Institution / Branch</th><th>Backend / Validation Result</th><th>Status</th></tr>`;
+    if (!rows.length) {
+        const message = !jwtToken
+            ? "Sign in to view the MongoDB ledger feed. Local validation events will appear here after a submission."
+            : (batchFeedError || "No ingestion activity is available yet. Submit a record or process a CSV batch to populate this feed.");
+        html += `<tr><td colspan="6" class="text-center helper-text">${escapeHTML(message)}</td></tr>`;
+    } else {
+        rows.forEach(row => {
+            const statusKind = row.status === "Committed" ? "ok" :
+                (row.status === "Rejected" ? "er" :
+                (row.status === "Skipped" || row.status === "Warning" ? "wn" : "in"));
+            const stamp = row.created_at ? new Date(row.created_at).toLocaleString() : "Just now";
+            html += `<tr>
+                <td class="mono">${escapeHTML(row.reference || "—")}<span class="sub">${escapeHTML(stamp)}</span></td>
+                <td class="mono">${escapeHTML(row.student_id || "—")}</td>
+                <td>${escapeHTML(row.name || "—")}</td>
+                <td>${escapeHTML(row.institution_id || "—")}<span class="sub">${escapeHTML(row.branch || "—")} · ${escapeHTML(row.category || "Admission")}</span></td>
+                <td class="resp-cell">${escapeHTML(row.response || "—")}<span class="sub">${escapeHTML(row.source || "")}</span></td>
+                <td>${pill(row.status || "Checked", statusKind)}</td>
+            </tr>`;
+        });
+    }
+    table.innerHTML = html;
+
+    const status = el("batch-feed-status");
+    if (status) {
+        if (!jwtToken) status.textContent = "Sign in required for server feed";
+        else if (batchFeedError) status.textContent = `Feed unavailable · ${batchFeedError}`;
+        else if (batchFeedLastUpdated) status.textContent = `MongoDB feed · refreshed ${batchFeedLastUpdated.toLocaleTimeString()}`;
+        else status.textContent = "Connecting to MongoDB feed…";
+    }
+}
+
+async function refreshIngestionActivity(showErrors = false) {
+    if (batchFeedInFlight) return;
+    if (!jwtToken || !["AICTE", "INSTITUTION"].includes(jwtRole)) {
+        renderBatchActivity();
+        return;
+    }
+    batchFeedInFlight = true;
+    const status = el("batch-feed-status");
+    if (status && showErrors) status.textContent = "Refreshing MongoDB ledger…";
+    try {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+        let response;
+        let data;
+        try {
+            response = await fetch(`${API_BASE}/api/records/recent-ingestion?limit=40`, {
+                method: "GET",
+                headers: { "Accept": "application/json", "Authorization": `Bearer ${jwtToken}` },
+                cache: "no-store",
+                signal: controller.signal
+            });
+            data = await response.json().catch(() => ({}));
+        } finally {
+            window.clearTimeout(timeoutId);
+        }
+        if (!response.ok) throw new Error(data.error || `Ledger feed returned HTTP ${response.status}`);
+        if (!Array.isArray(data.records)) throw new Error("Ledger feed response did not contain a records array.");
+        batchFeedRecords = data.records;
+        batchFeedLastUpdated = new Date();
+        batchFeedError = "";
+    } catch (error) {
+        batchFeedError = error.name === "AbortError" ? "request timed out" : (error.message || "request failed");
+        if (showErrors) showToast("Ledger feed unavailable", batchFeedError, "warning");
+    } finally {
+        batchFeedInFlight = false;
+        renderBatchActivity();
+    }
+}
+
+function startBatchFeedPolling() {
+    if (batchFeedTimer) window.clearInterval(batchFeedTimer);
+    batchFeedTimer = window.setInterval(() => {
+        if (activePage() === "upload" && document.visibilityState === "visible") {
+            refreshIngestionActivity(false);
+        }
+    }, 20000);
+}
+
+el("batch-refresh-btn")?.addEventListener("click", () => refreshIngestionActivity(true));
 
 function updateVigilance() {
     buildCaches();
@@ -2294,8 +2541,20 @@ document.addEventListener("click", async event => {
             `Data Engine generated ${engineRecords.length}; backend inserted ${totals.inserted}, ` +
             `already present ${totals.already_present}, invalid ${totals.invalid}.`
         );
+        recordBatchEvent({
+            reference: "DOCKER-BATCH-300",
+            student_id: "BATCH-300",
+            name: "Docker synthetic admission batch",
+            institution_id: "Multiple institutions",
+            branch: "Mixed",
+            category: "Synthetic batch",
+            response: `Data Engine generated ${engineRecords.length}; MongoDB inserted ${totals.inserted}, already present ${totals.already_present}, invalid ${totals.invalid}, duplicate in batch ${totals.duplicate_in_batch}.`,
+            status: totals.invalid ? "Warning" : "Committed",
+            source: "Docker Data Engine → Express bulk-ingest"
+        });
         saveDB();
 
+        await refreshIngestionActivity(false);
         await updateDashboard();
         updateRecords();
         navigateToPage("dash", true);
@@ -2317,6 +2576,17 @@ document.addEventListener("click", async event => {
         const message = error.name === "AbortError"
             ? "The Data Engine request timed out while Render was starting. Please retry."
             : (error.message || "Unable to generate records.");
+        recordBatchEvent({
+            reference: "DOCKER-BATCH-300",
+            student_id: "BATCH-300",
+            name: "Docker synthetic admission batch",
+            institution_id: "Multiple institutions",
+            branch: "Mixed",
+            category: "Synthetic batch",
+            response: message,
+            status: "Rejected",
+            source: "Docker Data Engine → Express bulk-ingest"
+        });
         msg.innerHTML = `<span class="tag tag-danger">${escapeHTML(message)}</span>`;
         showToast("Data Engine Error", message, "danger");
     } finally {
@@ -2603,36 +2873,122 @@ function triggerDownload(button, format, requestedName) {
 
 function makeChart(canvasId, config) {
     const canvas = el(canvasId);
-    if (!canvas || typeof window.Chart !== "function") return;
-    if (chartRegistry[canvasId]) chartRegistry[canvasId].destroy();
-    chartRegistry[canvasId] = new window.Chart(canvas.getContext("2d"), config);
+    if (!canvas) return;
+    if (typeof window.Chart !== "function") {
+        const host = canvas.parentElement;
+        if (host) host.dataset.chartError = "Chart library unavailable";
+        return;
+    }
+    try {
+        if (chartRegistry[canvasId]) chartRegistry[canvasId].destroy();
+        chartRegistry[canvasId] = new window.Chart(canvas.getContext("2d"), config);
+        canvas.parentElement?.removeAttribute("data-chart-error");
+    } catch (error) {
+        console.error(`Unable to initialize ${canvasId}:`, error);
+        const host = canvas.parentElement;
+        if (host) host.dataset.chartError = "Chart could not be rendered";
+    }
 }
 
 function initCharts() {
     if (typeof window.Chart !== "function") {
-        showToast("Charts unavailable", "Chart.js did not load. Check the CDN connection.", "warning");
+        ["trendChart", "categoryChart", "quotaBarChart"].forEach(id => {
+            const canvas = el(id);
+            if (canvas?.parentElement) canvas.parentElement.dataset.chartError = "Chart.js could not load. Check the network/CDN and reload.";
+        });
         return;
     }
+
+    const records = db.records.filter(inScope);
     const currentYear = new Date().getFullYear();
     const years = Array.from({ length: 5 }, (_, i) => String(currentYear - 4 + i));
-    const yearly = years.map(year => db.records.filter(record => String(record.year) === year).length);
-    const quotaLabels = ["TFW", "EWS", "NRI", "Foreign"];
-    const quotaValues = ["tfw", "ews", "nri", "fn"].map(key => db.records.filter(record => !!record[key]).length);
+    const yearly = years.map(year => records.filter(record => String(record.year) === year).length);
+    const quotaLabels = ["Regular", "TFW", "EWS", "NRI", "Foreign"];
+    const quotaValues = [
+        records.filter(record => !record.tfw && !record.ews && !record.nri && !record.fn).length,
+        records.filter(record => !!record.tfw).length,
+        records.filter(record => !!record.ews).length,
+        records.filter(record => !!record.nri).length,
+        records.filter(record => !!record.fn).length
+    ];
     const instLabels = INSTITUTIONS.map(item => item.id);
-    const regular = INSTITUTIONS.map(inst => db.records.filter(record => record.inst === inst.id && !record.sup).length);
-    const supernumerary = INSTITUTIONS.map(inst => db.records.filter(record => record.inst === inst.id && record.sup).length);
-    const common = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } } };
-    makeChart("trendChart", { type: "line", data: { labels: years, datasets: [{ label: "Local records", data: yearly, tension: .25, fill: false }] }, options: common });
-    makeChart("categoryChart", { type: "bar", data: { labels: quotaLabels, datasets: [{ label: "Local records", data: quotaValues }] }, options: common });
-    makeChart("quotaBarChart", { type: "bar", data: { labels: instLabels, datasets: [{ label: "Regular", data: regular }, { label: "Supernumerary", data: supernumerary }] }, options: { ...common, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } } });
+    const regular = INSTITUTIONS.map(inst => records.filter(record => record.inst === inst.id && !record.sup).length);
+    const supernumerary = INSTITUTIONS.map(inst => records.filter(record => record.inst === inst.id && record.sup).length);
+    const common = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: "index" },
+        plugins: {
+            legend: { display: true, position: "bottom" },
+            tooltip: { enabled: true }
+        },
+        scales: {
+            x: { ticks: { autoSkip: true, maxRotation: 0 } },
+            y: { beginAtZero: true, ticks: { precision: 0 } }
+        }
+    };
+
+    makeChart("trendChart", {
+        type: "line",
+        data: { labels: years, datasets: [{ label: "Local admissions", data: yearly, tension: .25, fill: true }] },
+        options: common
+    });
+    makeChart("categoryChart", {
+        type: "bar",
+        data: { labels: quotaLabels, datasets: [{ label: "Local records", data: quotaValues }] },
+        options: common
+    });
+    makeChart("quotaBarChart", {
+        type: "bar",
+        data: { labels: instLabels, datasets: [
+            { label: "Regular", data: regular },
+            { label: "Supernumerary", data: supernumerary }
+        ] },
+        options: { ...common, scales: {
+            x: { stacked: true },
+            y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+        } }
+    });
+}
+
+function renderInstitutionRankings() {
+    const table = el("rank-table");
+    if (!table) return;
+    buildCaches();
+    const records = db.records.filter(inScope);
+    const rows = INSTITUTIONS.map(inst => {
+        const own = records.filter(record => record.inst === inst.id);
+        const flagged = own.filter(record => analyzeFlags(record).length > 0).length;
+        return { inst, count: own.length, flagged };
+    }).sort((a, b) => a.flagged - b.flagged || b.count - a.count || a.inst.name.localeCompare(b.inst.name));
+
+    let html = `<tr><th>Local order</th><th>Institution</th><th>Local records</th><th>Flagged records</th></tr>`;
+    if (!records.length) {
+        html += `<tr><td colspan="4" class="text-center helper-text">No local registry records are available for this role and branch filter yet.</td></tr>`;
+    } else {
+        rows.forEach((row, index) => {
+            html += `<tr>
+                <td><strong>#${index + 1}</strong></td>
+                <td>${escapeHTML(row.inst.name)}</td>
+                <td class="mono">${row.count.toLocaleString()}</td>
+                <td>${row.flagged ? pill(String(row.flagged), "wn") : pill("0", "ok")}</td>
+            </tr>`;
+        });
+    }
+    table.innerHTML = html;
 }
 
 function updateAnalyticsData() {
-    // Rebuild from local browser data so Analytics never suggests live national totals.
-    if (!chartRegistry.trendChart && !chartRegistry.categoryChart && !chartRegistry.quotaBarChart) return;
+    // Always initialize charts. The former guard returned when chartRegistry
+    // was empty, which was exactly the first-visit state and caused blank canvases.
     initCharts();
+    renderInstitutionRankings();
 }
 
+el("analytics-refresh-btn")?.addEventListener("click", () => {
+    updateAnalyticsData();
+    showToast("Analytics refreshed", "Charts recalculated from the local registry cache.", "info");
+});
 function initVigilanceCharts() {
     if (typeof window.Chart !== "function") return;
     const scatter = ANOM.map((item, index) => ({ x: index + 1, y: Number(item.score) }));
@@ -2656,7 +3012,9 @@ function renderFuzzyMatches() {
 (function initializeApplicationUI() {
     const initialize = () => {
         try {
-            renderBatch();
+            if (typeof window.warmAicteBackend === "function") window.warmAicteBackend();
+            renderBatchActivity();
+            startBatchFeedPolling();
             renderIngHead();
             renderReviewQueue();
             updateDashboard();

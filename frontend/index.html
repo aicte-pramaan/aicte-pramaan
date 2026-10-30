@@ -140,6 +140,7 @@
         }
     </style>
     <link rel="stylesheet" href="responsive-browser-fixes.css">
+    <link rel="stylesheet" href="login-analytics-fixes.css">
 </head>
 
 <body data-role="aicte">
@@ -363,7 +364,7 @@
                     <div class="depth-card mb-24">
                         <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #f1f5f9;padding-bottom:12px;margin-bottom:16px;">
                             <h3 style="border:none;padding:0;margin:0;">Batch Ingestion — Zero-Template CSV Mapper</h3>
-                            <span class="tag tag-success">Background Queue Active</span>
+                            <span class="tag tag-info">Authenticated API ingestion</span>
                         </div>
                         <p class="helper-text">Compatible with JOSAA / State CET export files. No ERP upgrade required.</p>
                         <textarea id="csv" class="depth-input code-input" rows="6" placeholder="apaar, student_no, name, institution_id, course, year, tfw, ews, fn, supernumerary, consent"></textarea>
@@ -376,11 +377,17 @@
                     </div>
 
                     <div class="depth-card flush mb-24">
-                        <div class="card-head">
-                            <h3>Live Batch Validation &amp; Discrepancy Log</h3>
-                            <span class="muted">Sample gateway responses · showing 6 of 1,240 records</span>
+                        <div class="card-head batch-feed-head">
+                            <div>
+                                <h3>Live Batch Validation &amp; Discrepancy Log</h3>
+                                <p class="muted">Recent records confirmed by MongoDB, plus rejected or skipped submissions from this browser.</p>
+                            </div>
+                            <div class="batch-feed-toolbar">
+                                <span id="batch-feed-status" class="muted" aria-live="polite">Sign in to connect to the ledger feed</span>
+                                <button id="batch-refresh-btn" type="button" class="btn btn-secondary depth-btn">Refresh feed</button>
+                            </div>
                         </div>
-                        <div class="scroll"><table id="batch-table"></table></div>
+                        <div class="scroll"><table id="batch-table" class="data-table"></table></div>
                     </div>
 
                     <div class="depth-card mb-24">
@@ -500,6 +507,13 @@
 
                 <!-- Analytics & BI -->
                 <section id="impact" class="page hidden">
+                    <div class="analytics-toolbar mb-24">
+                        <div class="page-head">
+                            <h2>Analytics &amp; Business Intelligence</h2>
+                            <p>Charts and institution summaries use this browser's registry cache, not national AICTE totals.</p>
+                        </div>
+                        <button id="analytics-refresh-btn" type="button" class="btn btn-secondary depth-btn">Refresh analytics</button>
+                    </div>
                     <div class="depth-card mb-24 export-panel">
                         <div>
                             <h3 style="border:none;margin:0;padding:0;">Generate Official Reports</h3>
@@ -524,19 +538,17 @@
                     </div>
                     <div class="split-grid mb-24">
                         <div class="depth-card">
-                            <h3>Category-wise Quota Utilisation</h3>
+                            <h3>Institution-wise Enrolment (Local Records)</h3>
                             <div class="chart-container"><canvas id="quotaBarChart"></canvas></div>
                         </div>
                         <div class="depth-card flush">
                             <div class="card-head">
-                                <h3>Institution Compliance Rankings</h3>
-                                <span class="tag tag-success">Live Score</span>
+                                <h3>Institution Registry Summary</h3>
+                                <span class="tag tag-info">Local data · not an official AICTE score</span>
                             </div>
                             <table id="rank-table" class="data-table mt-16" style="margin-top:0;">
-                                <tr><th>Rank</th><th>Institution</th><th>Integrity Score</th><th>Status</th></tr>
-                                <tr><td><strong>#1</strong></td><td>Govind Institute of Tech.</td><td class="text-success">99.8%</td><td><span class="tag tag-success">Exemplary</span></td></tr>
-                                <tr><td><strong>#2</strong></td><td>Sharda School of Mgmt.</td><td class="text-success">98.5%</td><td><span class="tag tag-success">Compliant</span></td></tr>
-                                <tr><td><strong>#3</strong></td><td>Rajarshi College of Eng.</td><td class="text-warning">91.2%</td><td><span class="tag tag-warning">Minor Flags</span></td></tr>
+                                <tr><th>Rank</th><th>Institution</th><th>Local records</th><th>Flagged records</th></tr>
+                                <tr><td colspan="4" class="text-center helper-text">Calculating from local registry data…</td></tr>
                             </table>
                         </div>
                     </div>
@@ -616,15 +628,15 @@
             <div style="text-align:center;margin-bottom:18px;">
                 <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:10px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 <h3 style="border:none;padding:0;margin:0;font-family:'Source Serif 4',Georgia,serif;">Security Verification</h3>
-                <p class="helper-text mt-16">Demo sign-in: enter the six-digit test code <strong>123456</strong>. This mock backend does not use a real authenticator app.</p>
+                <p id="signin-status" class="helper-text mt-16" aria-live="polite">Demo sign-in: enter the six-digit test code <strong>123456</strong>. This mock backend does not use a real authenticator app.</p>
             </div>
             <div class="otp-inputs">
-                <input type="text" maxlength="1" class="depth-input otp-input"/>
-                <input type="text" maxlength="1" class="depth-input otp-input"/>
-                <input type="text" maxlength="1" class="depth-input otp-input"/>
-                <input type="text" maxlength="1" class="depth-input otp-input"/>
-                <input type="text" maxlength="1" class="depth-input otp-input"/>
-                <input type="text" maxlength="1" class="depth-input otp-input"/>
+                <input type="text" inputmode="numeric" pattern="[0-9]" autocomplete="one-time-code" aria-label="Verification digit 1" maxlength="1" class="depth-input otp-input"/>
+                <input type="text" inputmode="numeric" pattern="[0-9]" autocomplete="off" aria-label="Verification digit 2" maxlength="1" class="depth-input otp-input"/>
+                <input type="text" inputmode="numeric" pattern="[0-9]" autocomplete="off" aria-label="Verification digit 3" maxlength="1" class="depth-input otp-input"/>
+                <input type="text" inputmode="numeric" pattern="[0-9]" autocomplete="off" aria-label="Verification digit 4" maxlength="1" class="depth-input otp-input"/>
+                <input type="text" inputmode="numeric" pattern="[0-9]" autocomplete="off" aria-label="Verification digit 5" maxlength="1" class="depth-input otp-input"/>
+                <input type="text" inputmode="numeric" pattern="[0-9]" autocomplete="off" aria-label="Verification digit 6" maxlength="1" class="depth-input otp-input"/>
             </div>
             <div class="action-row mt-24" style="display:flex;gap:10px;">
                 <button id="btn-2fa-verify" type="button" class="btn btn-primary depth-btn" style="flex:1;">Verify &amp; Authenticate</button>
