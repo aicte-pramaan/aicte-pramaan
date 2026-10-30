@@ -209,7 +209,7 @@ function logAudit(action, details) {
 }
 
 // Cryptography: SHA-256 and Merkle Tree
-async function sha256(message) {
+async function sha256hex(message) {
     const msgBuffer = new TextEncoder().encode(message);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -223,7 +223,7 @@ function createCanonicalString(r) {
 
 async function generateMerkleTree(records) {
     if (records.length === 0) return [];
-    let currentLevel = await Promise.all(records.map(r => sha256(createCanonicalString(r))));
+    let currentLevel = await Promise.all(records.map(r => sha256hex(createCanonicalString(r))));
     const tree = [currentLevel];
 
     while (currentLevel.length > 1) {
@@ -231,7 +231,7 @@ async function generateMerkleTree(records) {
         for (let i = 0; i < currentLevel.length; i += 2) {
             const left = currentLevel[i];
             const right = currentLevel[i + 1] || left; 
-            nextLevel.push(await sha256(left + right));
+            nextLevel.push(await sha256hex(left + right));
         }
         tree.push(nextLevel);
         currentLevel = nextLevel;
@@ -746,7 +746,10 @@ el("branch-filter").addEventListener("change", e => {
 });
 
 el("f-inst").innerHTML = INSTITUTIONS.map(i => `<option value="${i.id}">${i.name} (${i.id})</option>`).join("");
-el("f-branch").addEventListener("change", () => { syncCourseFromBranch(); renderIngHead(); updateSeatHint(); });
+
+const _el749 = el("f-branch");
+if (_el749) _el749.addEventListener("change", () => { syncCourseFromBranch(); renderIngHead(); updateSeatHint(); });
+
 el("f-inst").addEventListener("change", updateSeatHint);
 syncCourseFromBranch();
 
@@ -1577,7 +1580,7 @@ function toHex(bytes) {
     ).join("");
 }
 
-async function sha256(bytes) {
+async function sha256bytes(bytes) {
     const digest = await crypto.subtle.digest("SHA-256", bytes);
     return new Uint8Array(digest);
 }
@@ -1665,7 +1668,7 @@ async function verifyLedgerPayload(payload) {
         `${payload.apaar_hmac}|${d.student_id}|` +
         `${d.institution_id}|${d.branch}|${d.admission_year}`;
 
-    let currentHash = await sha256(
+    let currentHash = await sha256bytes(
         concatBytes(
             new Uint8Array([0x00]),
             encoder.encode(canonicalData)
@@ -1697,7 +1700,7 @@ async function verifyLedgerPayload(payload) {
             ? sibling
             : currentHash;
 
-        currentHash = await sha256(
+        currentHash = await sha256bytes(
             concatBytes(
                 new Uint8Array([0x01]),
                 left,
