@@ -1879,12 +1879,16 @@ if (qrReference) {
 }
 
 
+// ======================================================================
 // Docker Engine Event Listener
+// ======================================================================
 const API_BASE_URL = "https://aicte-pramaan-data-engine.onrender.com";
 
 document.addEventListener("click", async (e) => {
     const btn = e.target.closest("#docker-btn");
     if (!btn) return;
+
+    console.log("Docker button clicked!");
 
     const msg = document.getElementById("docker-msg");
     if (!msg) return;
@@ -2003,537 +2007,6 @@ document.addEventListener("click", async (e) => {
     }
 });
 
-// ======================================================================
-// 🎯 Analytics & BI Engine (Charts & Export Simulation)
-// ======================================================================
-
-let chartsInitialized = false;
-let trendChartInst, categoryChartInst, quotaChartInst;
-
-function initCharts() {
-    if (chartsInitialized) return;
-    
-    Chart.defaults.font.family = "system-ui, -apple-system, sans-serif";
-    Chart.defaults.color = "#64748b";
-    
-    const ctxTrend = document.getElementById('trendChart').getContext('2d');
-    trendChartInst = new Chart(ctxTrend, {
-        type: 'line',
-        data: {
-            labels: ['AY 2022', 'AY 2023', 'AY 2024', 'AY 2025', 'AY 2026 (Live)'],
-            datasets: [{
-                label: 'Total Secure Enrolments',
-                data: [12040, 13100, 12850, 14200, 15000],
-                borderColor: '#4f46e5',
-                backgroundColor: 'rgba(79, 70, 229, 0.1)',
-                borderWidth: 3,
-                fill: true,
-                tension: 0.4,
-                pointRadius: 4,
-                pointBackgroundColor: '#ffffff',
-                pointBorderColor: '#4f46e5'
-            }]
-        },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false, grid: { borderDash: [4, 4] } }, x: { grid: { display: false } } } }
-    });
-
-    const ctxCat = document.getElementById('categoryChart').getContext('2d');
-    categoryChartInst = new Chart(ctxCat, {
-        type: 'doughnut',
-        data: {
-            labels: ['General', 'OBC', 'SC', 'ST'],
-            datasets: [{
-                data: [45, 27, 18, 10], 
-                backgroundColor: ['#4f46e5', '#10b981', '#f59e0b', '#8250df'],
-                borderWidth: 0,
-                hoverOffset: 4
-            }]
-        },
-        options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'right' } } }
-    });
-
-    const ctxQuota = document.getElementById('quotaBarChart').getContext('2d');
-    quotaChartInst = new Chart(ctxQuota, {
-        type: 'bar',
-        data: {
-            labels: ['Core Merit', 'TFW (<8L)', 'NRI', 'EWS'],
-            datasets: [{
-                label: 'Seats Filled',
-                data: [0, 0, 0, 0], 
-                backgroundColor: ['#cbd5e1', '#10b981', '#f59e0b', '#4f46e5'],
-                borderRadius: 4
-            }]
-        },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { borderDash: [4, 4] } }, x: { grid: { display: false } } } }
-    });
-
-    chartsInitialized = true;
-}
-
-function updateAnalyticsData() {
-    if (!chartsInitialized) return;
-
-    let core = 0, tfw = 0, nri = 0, ews = 0;
-    db.records.forEach(r => {
-        if (r.tfw) tfw++;
-        else if (r.nri) nri++;
-        else if (r.ews) ews++;
-        else core++;
-    });
-    
-    quotaChartInst.data.datasets[0].data = [core, tfw, nri, ews];
-    quotaChartInst.update();
-
-    trendChartInst.data.datasets[0].data[4] = 15000 + db.records.length;
-    trendChartInst.update();
-}
-
-function triggerDownload(btnElement, type, filename) {
-    const originalText = btnElement.innerHTML;
-    btnElement.classList.add("loading");
-    logAudit("EXPORT_REPORT", `Generated ${type.toUpperCase()} report: ${filename}`);
-    
-    setTimeout(() => {
-        btnElement.classList.remove("loading");
-        btnElement.innerHTML = `✅ Downloaded`;
-        btnElement.style.backgroundColor = 'var(--success)';
-        btnElement.style.color = '#fff';
-        btnElement.style.borderColor = 'var(--success)';
-        
-        const blobContent = type === 'excel' 
-            ? "SEP=,\nInstitution,Branch,Sanctioned,Filled,Supernumerary\nGit,CSE,60,60,4\n" 
-            : "%PDF-1.4\n%AICTE Mock PDF Content for Demonstration\n";
-            
-        const blob = new Blob([blobContent], { type: type === 'excel' ? 'text/csv' : 'application/pdf' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-
-        setTimeout(() => {
-            btnElement.innerHTML = originalText;
-            btnElement.style = "";
-        }, 2000);
-
-    }, 1200);
-}
-
-// Init execution
-updateDashboard();
-renderBatch();
-renderIngHead();
-updateSeatHint();
-
-// ======================================================================
-// 🎯 Real-World Integrations (JOSAA API & Student 360)
-// ======================================================================
-
-// 1. Student 360° Profile (NAD & DigiLocker Simulation)
-window.openStudent360 = function(apaar) {
-    el("m-360").classList.remove("hidden");
-    el("modal-360-apaar").innerText = `APAAR: ${apaar}`;
-    
-    // Reset views to loading state
-    el("nad-loader").classList.remove("hidden");
-    el("digi-loader").classList.remove("hidden");
-    el("nad-data").classList.add("hidden");
-    el("digi-data").classList.add("hidden");
-
-    // Simulate Network Latency (1.5s for NAD, 2.2s for DigiLocker)
-    setTimeout(() => {
-        el("nad-loader").classList.add("hidden");
-        el("nad-data").classList.remove("hidden");
-    }, 1500);
-
-    setTimeout(() => {
-        el("digi-loader").classList.add("hidden");
-        el("digi-data").classList.remove("hidden");
-        logAudit("360_VIEW", `Verified document hashes & credits for APAAR ${apaar} via DigiLocker API.`);
-    }, 2200);
-};
-
-// 2. JOSAA / State CET API Gateway Sync
-// ─────────────────────────────────────────────────────────────────────────────
-// JOSAA / State CET API Gateway — minimal log renderer
-// Replace the existing el("btn-josaa").addEventListener("click", ...) block
-// in app.js with this one.
-// ─────────────────────────────────────────────────────────────────────────────
-
-el("btn-josaa").addEventListener("click", () => {
-    const btn    = el("btn-josaa");
-    const panel  = el("josaa-terminal");
-    const logEl  = el("josaa-logs");
-    const badge  = el("josaa-log-status");
-
-    btn.disabled   = true;
-    btn.innerText  = "Syncing…";
-    panel.classList.remove("hidden");
-    logEl.innerHTML = "";
-    badge.innerText = "Connecting…";
-
-    // Helper: append a log entry
-    const log = (text, sub, kind = "info", delay = 0) => {
-        setTimeout(() => {
-            const now = new Date().toTimeString().slice(0, 8);
-            const li  = document.createElement("li");
-            li.innerHTML = `
-                <span class="josaa-log-time">${now}</span>
-                <span class="josaa-log-dot ${kind}"></span>
-                <span class="josaa-log-text">
-                    <strong>${text}</strong>
-                    ${sub ? `<span>${sub}</span>` : ""}
-                </span>`;
-            logEl.appendChild(li);
-            logEl.scrollTop = logEl.scrollHeight;
-        }, delay);
-    };
-
-    log("TLS handshake established",      "josaa.nic.in · NIC Secure API Gateway · Port 443", "ok",   300);
-    log("Authentication token accepted",   "Bearer JWT · Scope: seat-allotment:read",           "ok",   1000);
-    log("Requesting allotment matrix",     "Round 1 · 2026 · 8,540 institutions",               "info", 1800);
-    log("Payload received",                "24.5 MB JSON · 1,82,440 seat records",              "ok",   2600);
-    log("Mapping to APAAR IDs",            "Polars engine · 1,82,440 rows in 0.62 s",           "info", 3200);
-
-    // Conflict entry
-    setTimeout(() => {
-        badge.innerText = "Conflict detected";
-        badge.style.color = "#b45309";
-    }, 3900);
-
-    log("Conflict — cross-institute dual allotment",
-        "APAAR 100000000099 · INST001 (CSE) ↔ INST002 (ECE) · placed in 72 h escrow queue",
-        "err", 4000);
-
-    // Final success
-    setTimeout(() => {
-        // Inject a JOSAA-sourced record into the live DB
-        processRecord({
-            apaar: "100000000101", sid: "JOSAA-26-8910", name: "Ravi Teja",
-            inst: "INST002", branch: "IT", course: "B.Tech IT", year: 2026,
-            tfw: false, ews: false, nri: false, fn: false, sup: false, consent: true
-        });
-
-        log("Sync complete — 1 record committed to ledger",
-            "Connection closed · next sync window: Round 2 allotment",
-            "ok", 0);
-
-        badge.innerText = "Sync complete";
-        badge.style.color = "var(--success)";
-        btn.disabled  = false;
-        btn.innerText = "Trigger Round 1 Sync";
-        updateDashboard();
-        logAudit("JOSAA_SYNC", "Round 1 sync complete. 1 record committed; 1 conflict routed to escrow.");
-    }, 5000);
-});
-// ======================================================================
-// 🤖 ML & Fraud Detection Engine (Vigilance Center Visuals)
-// ======================================================================
-
-let vigChartsInitialized = false;
-
-function initVigilanceCharts() {
-    if (vigChartsInitialized) return;
-
-    Chart.defaults.font.family = "system-ui, -apple-system, sans-serif";
-
-    // 1. Isolation Forest Scatter Plot (Mocking PCA data)
-    const generateCluster = (count, xCenter, yCenter, spread) => {
-        return Array.from({length: count}, () => ({
-            x: xCenter + (Math.random() - 0.5) * spread,
-            y: yCenter + (Math.random() - 0.5) * spread
-        }));
-    };
-
-    const normalData = generateCluster(200, 0, 0, 15); // Normal students
-    const anomalyData = generateCluster(12, 25, 20, 30); // Outliers (Ghosts/Frauds)
-
-    const ctxScatter = document.getElementById('anomalyScatterChart').getContext('2d');
-    new Chart(ctxScatter, {
-        type: 'scatter',
-        data: {
-            datasets: [
-                {
-                    label: 'Normal Records',
-                    data: normalData,
-                    backgroundColor: 'rgba(148, 163, 184, 0.4)',
-                    pointRadius: 3
-                },
-                {
-                    label: 'Flagged Anomalies',
-                    data: anomalyData,
-                    backgroundColor: '#ef4444',
-                    borderColor: '#b91c1c',
-                    borderWidth: 1,
-                    pointRadius: 6,
-                    pointHoverRadius: 8
-                }
-            ]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } } },
-            scales: {
-                x: { title: { display: true, text: 'PCA Component 1' } },
-                y: { title: { display: true, text: 'PCA Component 2' } }
-            }
-        }
-    });
-
-    // 2. Temporal Burst Chart (Bar)
-    const ctxBurst = document.getElementById('temporalBurstChart').getContext('2d');
-    new Chart(ctxBurst, {
-        type: 'bar',
-        data: {
-            labels: ['11:00', '11:15', '11:30', '11:45 (Burst)', '12:00', '12:15'],
-            datasets: [{
-                label: 'Records Uploaded / 15m',
-                data: [12, 18, 9, 854, 5, 2],
-                backgroundColor: [
-                    '#cbd5e1', '#cbd5e1', '#cbd5e1', 
-                    '#ef4444', // Red spike for the anomaly burst
-                    '#cbd5e1', '#cbd5e1'
-                ],
-                borderRadius: 4
-            }]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true, grid: { borderDash: [4, 4] } } }
-        }
-    });
-
-    vigChartsInitialized = true;
-}
-
-function renderFuzzyMatches() {
-    const container = el("fuzzy-match-container");
-    if (container.innerHTML.trim() !== "") return; // Already rendered
-
-    const FUZZY_DATA = [
-        {
-            score: "96.4%",
-            status: "Likely Duplicate",
-            p1: { name: "Karanveer Singh", inst: "INST-0921", apaar: "1000 8821 9012" },
-            p2: { name: "Karan Vir Singh", inst: "INST-1102", apaar: "1000 3940 1192" },
-            dobMatch: true
-        },
-        {
-            score: "89.1%",
-            status: "Requires Review",
-            p1: { name: "Mohd. Ayan Raza", inst: "INST-4421", apaar: "1000 4429 8810" },
-            p2: { name: "Mohammed Ayan", inst: "INST-9920", apaar: "1000 1120 4991" },
-            dobMatch: true
-        }
-    ];
-
-    let html = "";
-    FUZZY_DATA.forEach(match => {
-        html += `
-        <div class="fuzzy-card">
-            <div class="fuzzy-header">
-                <div>
-                    <div style="font-size:10px; color:#64748b; text-transform:uppercase;">Similarity Score</div>
-                    <div class="fuzzy-score">${match.score}</div>
-                </div>
-                <span class="tag tag-danger">${match.status}</span>
-            </div>
-            
-            <div class="fuzzy-profiles">
-                <div class="fuzzy-profile" style="text-align:right;">
-                    <h4>${escapeHTML(match.p1.name)}</h4>
-                    <span class="meta">${escapeHTML(match.p1.apaar)}</span>
-                    <span class="meta" style="color:var(--primary);">${escapeHTML(match.p1.inst)}</span>
-                </div>
-                <div class="fuzzy-profile">
-                    <h4>${escapeHTML(match.p2.name)}</h4>
-                    <span class="meta">${escapeHTML(match.p2.apaar)}</span>
-                    <span class="meta" style="color:var(--primary);">${escapeHTML(match.p2.inst)}</span>
-                </div>
-            </div>
-            
-            ${match.dobMatch ? `
-            <div class="dob-match">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                Exact DOB Overlap Detected (14-Aug-2007)
-            </div>
-            ` : ''}
-        </div>
-        `;
-    });
-
-    container.innerHTML = html;
-}
-
-// ======================================================================
-// 🔍 Dispute Resolution & Manual Review Queue
-// ======================================================================
-
-// Mock database of flagged appeals
-const APPEALS_DB = [
-    { id: "APP-2026-081", apaar: "1000 8821 9012", name: "Sunil Kumar", type: "Category Mismatch", desc: "Student uploaded valid EWS certificate, but ML flagged as General category. Manual verification required.", status: "Pending", inst: "INST001" },
-    { id: "APP-2026-094", apaar: "1000 3940 1192", name: "Rohan Deshmukh", type: "Escrow Locked", desc: "Cross-institute dual allotment. VJTI seat cancelled successfully on 12-Aug. Requesting Escrow release to new college.", status: "Pending", inst: "INST002" }
-];
-
-function renderReviewQueue() {
-    let html = `<tr><th>Case ID</th><th>Student</th><th>Institution</th><th>Dispute Type</th><th>Details</th><th>Action</th></tr>`;
-    const pending = APPEALS_DB.filter(a => a.status === "Pending");
-    
-    pending.forEach(a => {
-        html += `<tr>
-            <td class="mono">${a.id}</td>
-            <td><strong>${a.name}</strong><br><span class="mono muted">${a.apaar}</span></td>
-            <td>${getInstName(a.inst)}</td>
-            <td><span class="tag tag-warning">${a.type}</span></td>
-            <td class="helper-text" style="max-width:250px; white-space:normal; line-height:1.4;">${a.desc}</td>
-            <td><button class="btn btn-primary depth-btn" style="padding:6px 12px; font-size:12px;" onclick="openReviewModal('${a.id}')">Adjudicate</button></td>
-        </tr>`;
-    });
-    
-    if(pending.length === 0) {
-         html += `<tr><td colspan="6" class="text-center helper-text">All queues clear. No pending appeals.</td></tr>`;
-    }
-    el("review-table").innerHTML = html;
-}
-
-let currentReviewId = null;
-window.openReviewModal = function(id) {
-    currentReviewId = id;
-    const a = APPEALS_DB.find(x => x.id === id);
-    el("review-details").innerHTML = `
-        <dt>Student</dt><dd><b>${a.name}</b> <br> ${a.apaar}</dd>
-        <dt>Dispute</dt><dd>${a.type}</dd>
-    `;
-    el("review-reason").value = "";
-    el("m-review").classList.remove("hidden");
-}
-
-function handleReview(decision) {
-    const reason = el("review-reason").value.trim();
-    if(!reason) {
-        showToast("Error", "Officer remarks are legally required for audit logging.", "warning");
-        return;
-    }
-    
-    const a = APPEALS_DB.find(x => x.id === currentReviewId);
-    a.status = decision; // "Approved" or "Rejected"
-    
-    logAudit("MANUAL_ADJUDICATION", `Appeal ${a.id} ${decision}. Officer Remarks: ${reason}`);
-    
-    showToast("Adjudication Complete", `Student notified via SMS. Cryptographic ledger updated with ${decision} status.`, decision === "Approved" ? "success" : "danger");
-    
-    el("m-review").classList.add("hidden");
-    renderReviewQueue();
-}
-
-el("btn-approve-appeal")?.addEventListener("click", () => handleReview("Approved"));
-el("btn-reject-appeal")?.addEventListener("click", () => handleReview("Rejected"));
-
-// Ensure the page renders when clicked (Update your `renderPage` function slightly)
-const existingRenderPage = renderPage;
-renderPage = function(p) {
-    existingRenderPage(p);
-    if (p === "review") renderReviewQueue();
-};
-
-// ======================================================================
-// 🎬 Automated Presentation Demos (Hackathon Sequences)
-// ======================================================================
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-// ======================================================================
-// PATCH: replace the entire runDemo function in app.js
-// Find:   async function runDemo(scenario) {
-// Replace with this block (through the closing })
-// ======================================================================
-
-async function runDemo(scenario) {
-    // Use the new class name from the patched HTML
-    const btns = document.querySelectorAll('.demo-scenario-btn');
-    const btn = btns[scenario - 1];
-    if (!btn) return;
-
-    // Visual: mark as running
-    btn.classList.add('running');
-    const origLabel = btn.querySelector('.demo-label').textContent;
-    btn.querySelector('.demo-label').textContent = 'Running…';
-
-    try {
-        if (scenario === 1) {
-            showToast("Demo 01", "Injecting a clean student record…", "info");
-            processRecord({apaar: "991122334455", sid: "DEMO-001", name: "Anjali Sharma", inst: "INST001", branch: "CSE", course: "B.Tech CSE", year: 2026, tfw: false, ews: false, nri: false, fn: false, sup: false, ghost_flag: false, consent: true});
-            await sleep(1500);
-            showToast("Role Switch", "Switching to Employer view…", "info");
-            el("role").value = "employer";
-            applyRole("employer");
-            await sleep(1500);
-            el("v-id").value = "991122334455";
-            showToast("Verifying", "Employer scanning QR / entering APAAR ID…", "info");
-            await sleep(1000);
-            el("v-btn").click();
-
-        } else if (scenario === 2) {
-            showToast("Demo 02", "Attempting to exceed AICTE Sanctioned Intake for INST001 (CSE).", "warning");
-            document.querySelector('[data-page="dash"]').click();
-            await sleep(1500);
-            const cap = sanctioned("INST001", "CSE");
-            instRegCache[seatKey("INST001", "CSE")] = cap;
-            showToast("Quota Full", `CSE limit (${cap}) reached. Injecting 1 additional record…`, "warning");
-            await sleep(2000);
-            processRecord({apaar: "991122334466", sid: "DEMO-002", name: "Rahul Verma", inst: "INST001", branch: "CSE", course: "B.Tech CSE", year: 2026, tfw: false, ews: false, nri: false, fn: false, sup: false, ghost_flag: false, consent: true});
-            updateDashboard();
-            await sleep(1000);
-            showToast("Policy Violation", "Enrolment flagged — 'Exceeds AICTE Approved Intake' applied.", "danger");
-
-        } else if (scenario === 3) {
-            showToast("Demo 03", "Simulating cross-institute duplicate identity.", "warning");
-            document.querySelector('[data-page="dash"]').click();
-            await sleep(1500);
-            processRecord({apaar: "777788889999", sid: "DEMO-003A", name: "Vikram Singh", inst: "INST001", branch: "IT", course: "B.Tech IT", year: 2026, tfw: false, ews: false, nri: false, fn: false, sup: false, ghost_flag: false, consent: true});
-            showToast("Admitted", "Vikram Singh — Govind Institute of Tech.", "info");
-            await sleep(2000);
-            processRecord({apaar: "777788889999", sid: "DEMO-003B", name: "Vikram Singh", inst: "INST002", branch: "IT", course: "B.Tech IT", year: 2026, tfw: false, ews: false, nri: false, fn: false, sup: false, ghost_flag: false, consent: true});
-            showToast("Ghost Seat Detected", "Same APAAR at Rajarshi College — routed to Vigilance ML Queue.", "danger");
-            await sleep(2000);
-            document.querySelector('[data-page="vigilance"]').click();
-
-        } else if (scenario === 4) {
-            showToast("Demo 04", "Foreign National admission — calling FRRO e-Visa gateway.", "info");
-            document.querySelector('[data-page="upload"]').click();
-            await sleep(1500);
-            showToast("API Sync", "FRRO e-Visa & Passport Gateway — verifying…", "info");
-            await sleep(2000);
-            processRecord({apaar: "TEMP-FN-NPL01", sid: "DEMO-004", name: "Siddhartha Thapa", inst: "INST003", branch: "PGDM", course: "PGDM", year: 2026, tfw: false, ews: false, nri: false, fn: true, sup: true, ghost_flag: false, consent: true});
-            showToast("Provisional Locked", "Foreign Temp ID issued. Added to FN supernumerary quota.", "success");
-            await sleep(1500);
-            document.querySelector('[data-page="dash"]').click();
-
-        } else if (scenario === 5) {
-            showToast("Demo 05", "Student revokes consent under DPDP Act 2023.", "info");
-            processRecord({apaar: "554433221100", sid: "DEMO-005", name: "Sneha Patil", inst: "INST001", branch: "CSE", course: "B.Tech CSE", year: 2026, tfw: false, ews: false, nri: false, fn: false, sup: false, ghost_flag: false, consent: false});
-            await sleep(2000);
-            showToast("Role Switch", "Employer attempting verification…", "info");
-            el("role").value = "employer";
-            applyRole("employer");
-            await sleep(1500);
-            el("v-id").value = "554433221100";
-            el("v-btn").click();
-            await sleep(500);
-            showToast("Access Denied", "DPDP Act enforced — employer verification blocked.", "danger");
-        }
-    } finally {
-        await sleep(4000);
-        btn.classList.remove('running');
-        btn.querySelector('.demo-label').textContent = origLabel;
-    }
-}
-
-
 // ===== Responsive tables: safe auto-labeling for phone card views =====
 (function () {
     const IDS = [
@@ -2548,7 +2021,6 @@ async function runDemo(scenario) {
         const first = t.querySelector("tr");
         if (!first) return;
 
-        // Disconnect observer during DOM manipulation to prevent infinite loops
         const obs = observers.get(t);
         if (obs) obs.disconnect();
 
@@ -2558,7 +2030,7 @@ async function runDemo(scenario) {
         t.querySelectorAll("tr").forEach(tr => {
             if (tr === first) return;
             [...tr.children].forEach((td, i) => {
-                if (td.hasAttribute("colspan")) return; // Empty state row check
+                if (td.hasAttribute("colspan")) return;
                 if (heads[i]) td.setAttribute("data-label", heads[i]);
 
                 if (!td.querySelector(":scope > .cv")) {
@@ -2572,7 +2044,6 @@ async function runDemo(scenario) {
         
         t.classList.add("rtable");
 
-        // Reconnect observer for dynamic updates
         if (obs) obs.observe(t, { childList: true, subtree: true });
     }
 
@@ -2588,70 +2059,47 @@ async function runDemo(scenario) {
     });
 })();
 
-
 // ============================================================
 // MOBILE NAVIGATION — INDEPENDENT INITIALIZATION
-// Works even if another script has an unrelated runtime error.
 // ============================================================
-
 (function initializeMobileNavigation() {
-
     const toggle = document.getElementById("nav-toggle");
     const sidebar = document.getElementById("sidebar");
     const overlay = document.getElementById("nav-overlay");
 
-    if (!toggle || !sidebar || !overlay) {
-        console.error("Mobile navigation elements are missing.");
-        return;
-    }
+    if (!toggle || !sidebar || !overlay) return;
 
     const mobileQuery = window.matchMedia("(max-width: 1024px)");
 
     function setMenuOpen(open) {
-
-        // Never leave the drawer open on desktop.
-        if (!mobileQuery.matches) {
-            open = false;
-        }
-
+        if (!mobileQuery.matches) open = false;
         document.body.classList.toggle("nav-open", open);
-
         toggle.setAttribute("aria-expanded", String(open));
         overlay.setAttribute("aria-hidden", String(!open));
     }
 
-    // Hamburger button
     toggle.addEventListener("click", function (event) {
         event.preventDefault();
-
         const isOpen = document.body.classList.contains("nav-open");
         setMenuOpen(!isOpen);
     });
 
-    // Close when tapping outside the drawer
     overlay.addEventListener("click", function () {
         setMenuOpen(false);
     });
 
-    // Close after choosing a navigation page
     sidebar.querySelectorAll(".nav-menu a").forEach(function (link) {
         link.addEventListener("click", function () {
             setMenuOpen(false);
         });
     });
 
-    // Close using Escape
     document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape") {
-            setMenuOpen(false);
-        }
+        if (event.key === "Escape") setMenuOpen(false);
     });
 
-    // Handle changing device orientation or browser size
     function handleBreakpointChange() {
-        if (!mobileQuery.matches) {
-            setMenuOpen(false);
-        }
+        if (!mobileQuery.matches) setMenuOpen(false);
     }
 
     if (mobileQuery.addEventListener) {
@@ -2661,10 +2109,7 @@ async function runDemo(scenario) {
     }
 
     window.addEventListener("resize", handleBreakpointChange);
-
-    // Correct initial state
     setMenuOpen(false);
-
 })();
 
 // Wake both Render services on page load
