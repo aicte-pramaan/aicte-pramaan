@@ -668,7 +668,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
     btn.innerHTML = `Verifying TOTP...`;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
     try {
         const response = await fetch(`${API_BASE}/api/auth/login`, {
@@ -1893,31 +1893,95 @@ el("docker-btn").addEventListener("click", async () => {
     }
 
     btn.disabled = true;
-    btn.innerText = "Generating via API...";
-    msg.innerHTML = "";
+    btn.innerText = "Waking data engine...";
+    msg.innerHTML = `<span class="tag tag-info">Contacting data engine — may take 30–60s on first run…</span>`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90000);
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/synthesize/300`);
-        if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+        const response = await fetch(`${API_BASE_URL}/api/synthesize/300`, {
+            signal: controller.signal
+        });
+        clearTimeout(timeout);
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `Data engine error ${response.status}`);
+        }
 
         const data = await response.json();
         if (data.status !== "success") {
-            throw new Error("The API did not return a success response.");
+            throw new Error(data.message || "The API did not return a success response.");
         }
 
-        // 1. Store everything in MongoDB first.
-        btn.innerText = "Saving to ledger...";
-        const totals = await syncRecordsToBackend(data.records, (done, total) => {
-            msg.innerHTML = `<span class="tag tag-info">Saving to ledger: ${done.toLocaleString()} / ${total.toLocaleString()}</span>`;
-        });
+        // ── KEY FIX: data engine returns apaar_id/student_id format,
+        //    not the local apaar/sid format. Normalise before bulk-ingest.
+        const engineRecords = data.records.map(r => ({
+            apaar_id:       r.apaar_id  || r.apaar,
+            student_id:     r.student_id || r.sid,
+            name:           r.name,
+            institution_id: r.institution_id || r.inst,
+            branch:         BRANCH_MAP[r.branch] ? r.branch : guessBranch(r.course || r.branch || ""),
+            admission_year: Number(r.admission_year || r.year),
+            is_tfw:         !!(r.is_tfw  || r.tfw),
+            is_ews:         !!(r.is_ews  || r.ews),
+            is_nri:         !!(r.is_nri  || r.nri),
+            is_fn:          !!(r.is_fn   || r.fn),
+            has_consent:    r.has_consent !== false && r.consent !== false
+        }));
 
-        // 2. Only after the save succeeds, show the records in the Registry.
-        db.records = data.records;
-        db.merkleRoot = data.merkle_root;
+        // Save to backend ledger first
+        btn.innerText = "Saving to ledger...";
+
+        const CHUNK = 1000;
+        const totals = { inserted: 0, already_present: 0, invalid: 0 };
+
+        for (let i = 0; i < engineRecords.length; i += CHUNK) {
+            const chunk = engineRecords.slice(i, i + CHUNK);
+            msg.innerHTML = `<span class="tag tag-info">Saving to ledger: ${Math.min(i + CHUNK, engineRecords.length).toLocaleString()} / ${engineRecords.length.toLocaleString()}</span>`;
+
+            const res = await fetch(`${API_BASE}/api/records/bulk-ingest`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${jwtToken}`
+                },
+                body: JSON.stringify({ records: chunk })
+            });
+
+            const resData = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(resData.error || `Backend error ${res.status}`);
+
+            totals.inserted       += resData.inserted       || 0;
+            totals.already_present += resData.already_present || 0;
+            totals.invalid         += resData.invalid         || 0;
+        }
+
+        // Mirror records locally so the Registry table shows them.
+        // Convert back to the local apaar/sid shape for localStorage.
+        db.records = engineRecords.map(r => ({
+            apaar:  r.apaar_id,
+            sid:    r.student_id,
+            name:   r.name,
+            inst:   r.institution_id,
+            branch: r.branch,
+            course: courseFor(r.branch) || r.branch,
+            year:   r.admission_year,
+            tfw:    r.is_tfw,
+            ews:    r.is_ews,
+            nri:    r.is_nri,
+            fn:     r.is_fn,
+            sup:    false,
+            ghost_flag: false,
+            consent: r.has_consent
+        }));
+        db.merkleRoot = data.merkle_root || "";
+        saveDB();
 
         logAudit(
             "MASS_INGESTION",
-            `Streamed ${data.generated_count} records; ${totals.inserted} stored in ledger, ` +
+            `Streamed ${engineRecords.length} records; ${totals.inserted} stored in ledger, ` +
             `${totals.already_present} already present.`
         );
 
@@ -1929,17 +1993,33 @@ el("docker-btn").addEventListener("click", async () => {
 
         document.querySelector('[data-page="dash"]').click();
         setTimeout(() => {
-            el("s-root").innerText = data.merkle_root.substring(0, 16) + "...";
+            el("s-root").innerText = db.merkleRoot
+                ? db.merkleRoot.substring(0, 16) + "..."
+                : "Computed via Backend";
         }, 500);
 
+        await updateDashboard();
+        updateRecords();
+
     } catch (error) {
+        clearTimeout(timeout);
         console.error("Stream/sync failed:", error);
-        msg.innerHTML = `<span class="tag tag-danger">Failed: ${escapeHTML(error.message)}</span>`;
+        const userMsg = error.name === 'AbortError'
+            ? "Timed out — data engine is cold-starting. Wait 60s and retry."
+            : error.message;
+        msg.innerHTML = `<span class="tag tag-danger">Failed: ${escapeHTML(userMsg)}</span>`;
     } finally {
         btn.innerText = "Stream 300 Records";
         btn.disabled = false;
     }
 });
+
+// ── Wake both Render services on page load so they're warm by the time
+//    the user clicks login or stream.
+(function pingBackend() {
+    fetch(`${API_BASE}/health`,  { method: 'GET' }).catch(() => {});
+    fetch(`${API_BASE_URL}/`,    { method: 'GET' }).catch(() => {});
+})();
 
 // ======================================================================
 // 🎯 Analytics & BI Engine (Charts & Export Simulation)
@@ -2605,8 +2685,8 @@ async function runDemo(scenario) {
 
 })();
 
-// At the bottom of app.js, near the init section
+// Wake both Render services on page load
 (function pingBackend() {
-    fetch(`${API_BASE}/api/auth/login`, { method: 'HEAD' })
-        .catch(() => {}); // Silently warm up the container
+    fetch(`${API_BASE}/health`,  { method: 'GET' }).catch(() => {});
+    fetch(`${API_BASE_URL}/`,    { method: 'GET' }).catch(() => {});
 })();
