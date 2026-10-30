@@ -635,7 +635,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
         // Map the UI role to the backend credentials
         let username = pendingRole === 'institution' ? 'INST001' : 'AICTE_ADMIN';
         let password = pendingRole === 'institution' ? 'password123' : 'admin123';
-        let totp_code = "123456"; // Simulating valid TOTP app input
+        let totp_code = "123456"; // demo: UI accepts any digits
 
         const response = await fetch(`${API_BASE}/api/auth/login`, {
             method: 'POST',
@@ -1847,63 +1847,54 @@ el("docker-btn").addEventListener("click", async () => {
     const btn = el("docker-btn");
     const msg = el("docker-msg");
 
-    btn.innerText = "Generating via API...";
+    if (!jwtToken) {
+        msg.innerHTML = `<span class="tag tag-danger">Log in as AICTE Admin first (role dropdown).</span>`;
+        return;
+    }
+
     btn.disabled = true;
+    btn.innerText = "Generating via API...";
     msg.innerHTML = "";
 
     try {
-        const response = await fetch(
-            `${API_BASE_URL}/api/synthesize/30000`
-        );
-
-        if (!response.ok) {
-            throw new Error(`HTTP error: ${response.status}`);
-        }
+        const response = await fetch(`${API_BASE_URL}/api/synthesize/30000`);
+        if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
 
         const data = await response.json();
-
         if (data.status !== "success") {
             throw new Error("The API did not return a success response.");
         }
 
+        // 1. Store everything in MongoDB first.
+        btn.innerText = "Saving to ledger...";
+        const totals = await syncRecordsToBackend(data.records, (done, total) => {
+            msg.innerHTML = `<span class="tag tag-info">Saving to ledger: ${done.toLocaleString()} / ${total.toLocaleString()}</span>`;
+        });
+
+        // 2. Only after the save succeeds, show the records in the Registry.
         db.records = data.records;
         db.merkleRoot = data.merkle_root;
 
-        msg.innerHTML = `<span class="tag tag-info">Syncing to ledger…</span>`;
-        try {
-            const t = await syncRecordsToBackend(db.records, (d, n) => {
-                msg.innerHTML = `<span class="tag tag-info">Syncing ${d}/${n}…</span>`;
-            });
-            console.log('Ledger sync:', t);
-        } catch (e) {
-            console.warn('Ledger sync failed:', e.message);
-        }
-
         logAudit(
             "MASS_INGESTION",
-            `API synthesized ${data.generated_count} records in ` +
-            `${data.time_taken_seconds}s. Merkle Root: ` +
-            `${data.merkle_root.substring(0, 8)}...`
+            `Streamed ${data.generated_count} records; ${totals.inserted} stored in ledger, ` +
+            `${totals.already_present} already present.`
         );
 
         msg.innerHTML =
-            `<span class="tag tag-success">Generated ` +
-            `${data.generated_count} records in ` +
-            `${data.time_taken_seconds}s</span>`;
+            `<span class="tag tag-success">${totals.inserted.toLocaleString()} saved to ledger` +
+            (totals.already_present ? `, ${totals.already_present.toLocaleString()} already present` : "") +
+            (totals.invalid ? `, ${totals.invalid} skipped (invalid)` : "") +
+            `</span>`;
 
         document.querySelector('[data-page="dash"]').click();
-
         setTimeout(() => {
-            el("s-root").innerText =
-                data.merkle_root.substring(0, 16) + "...";
+            el("s-root").innerText = data.merkle_root.substring(0, 16) + "...";
         }, 500);
 
     } catch (error) {
-        console.error("API request failed:", error);
-
-        msg.innerHTML =
-            `<span class="tag tag-danger">API request failed. ` +
-            `Check the browser console for details.</span>`;
+        console.error("Stream/sync failed:", error);
+        msg.innerHTML = `<span class="tag tag-danger">Failed: ${escapeHTML(error.message)}</span>`;
     } finally {
         btn.innerText = "Stream 30,000 Records";
         btn.disabled = false;
