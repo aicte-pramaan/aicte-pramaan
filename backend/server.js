@@ -73,11 +73,8 @@ async function startServer() {
         await resignStoredRecords();
     }
 
-    await rehydrateMerkleTree();
-
     // Restore the Merkle tree from persistent database records
     await rehydrateMerkleTree();
-
     console.log('Merkle tree successfully restored.');
 
     const PORT = Number(process.env.PORT) || 5000;

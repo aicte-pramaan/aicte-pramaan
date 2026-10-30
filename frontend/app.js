@@ -675,12 +675,24 @@ el("add-btn").addEventListener("click", async () => {
         const msgEl = el("add-msg");
 
         if (response.ok) {
-            msgEl.innerText = `Secured at Leaf Index: ${data.index}`;
-            msgEl.className = `msg mt-16 tag tag-success`;
-            
+            const auditWarning = data.audit_logged === false;
+
+            msgEl.innerText = auditWarning
+                ? `Record saved at Leaf Index: ${data.index}. Audit logging failed. Do not resubmit.`
+                : `Secured at Leaf Index: ${data.index}`;
+
+            msgEl.className = auditWarning
+                ? `msg mt-16 tag tag-danger`
+                : `msg mt-16 tag tag-success`;
+
             // Clear UI
             ["f-apaar", "f-sid", "f-name"].forEach(id => el(id).value = "");
-            showToast("Admission Confirmed", "Record cryptographically secured in MongoDB.", "success");
+
+            showToast(
+                auditWarning ? "Record Saved - Audit Warning" : "Admission Confirmed",
+                data.message || "Record cryptographically secured in MongoDB.",
+                auditWarning ? "danger" : "success"
+            );
         } else {
             msgEl.innerText = data.error || "Upload failed";
             msgEl.className = `msg mt-16 tag tag-danger`;
