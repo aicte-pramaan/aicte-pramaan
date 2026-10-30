@@ -16,16 +16,17 @@ const {
 } = require('./utils/cryptoUtils');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Middleware
 app.use(helmet());
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 // Global Rate Limiter
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 500,
     message: {
         error: 'Too many requests, please try again later.'
     }

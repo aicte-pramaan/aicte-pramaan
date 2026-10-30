@@ -100,7 +100,7 @@ const hashApaar = (apaar_id) => {
 const rehydrateMerkleTree = async () => {
     const StudentRecord = require('../models/StudentRecord');
     globalMerkleTree.leaves = [];
-    const records = await StudentRecord.find({}).sort({ createdAt: 1 });
+    const records = await StudentRecord.find({}).sort({ createdAt: 1, _id: 1 });
     for (const record of records) {
         const canonicalData = `${record.apaar_hmac}|${record.student_id}|${record.institution_id}|${record.branch}|${record.admission_year}`;
         globalMerkleTree.appendRecord(canonicalData);
