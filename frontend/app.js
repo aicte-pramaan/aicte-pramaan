@@ -317,6 +317,73 @@ function processRecord(recordData) {
     return { success: true, msg: "Record securely encrypted and saved." };
 }
 
+
+function normalizeApaarId(value) {
+    const raw = String(value || '').trim();
+    const compact = raw.replace(/[\s-]/g, '');
+
+    return /^\d{12}$/.test(compact) ? compact : raw;
+}
+
+async function postRecordToLedger(payload) {
+    if (!jwtToken) {
+        throw new Error('Please log in before registering a record.');
+    }
+
+    const response = await fetch(`${API_BASE}/api/records/ingest`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${jwtToken}`
+        },
+        body: JSON.stringify(payload)
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        throw new Error(data.error || `Backend error ${response.status}`);
+    }
+
+    return data;
+}
+
+const toLedgerPayload = r => ({
+    apaar_id: r.apaar,
+    student_id: r.sid,
+    name: r.name,
+    institution_id: r.inst,
+    branch: BRANCH_MAP[r.branch] ? r.branch : branchOf(r),
+    admission_year: Number(r.year),
+    is_tfw: !!r.tfw, is_ews: !!r.ews, is_nri: !!r.nri, is_fn: !!r.fn,
+    has_consent: r.consent !== false
+});
+
+async function syncRecordsToBackend(records, onProgress) {
+    if (!jwtToken) throw new Error('Log in as AICTE Admin first.');
+    const totals = { inserted: 0, already_present: 0, invalid: 0 };
+    const CHUNK = 1000;
+
+    for (let i = 0; i < records.length; i += CHUNK) {
+        const chunk = records.slice(i, i + CHUNK).map(toLedgerPayload);
+        const res = await fetch(`${API_BASE}/api/records/bulk-ingest`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${jwtToken}`
+            },
+            body: JSON.stringify({ records: chunk })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Backend error ${res.status}`);
+        totals.inserted += data.inserted;
+        totals.already_present += data.already_present;
+        totals.invalid += data.invalid;
+        if (onProgress) onProgress(Math.min(i + CHUNK, records.length), records.length);
+    }
+    return totals;
+}
+
 // UI Rendering
 async function updateDashboard() {
     buildCaches();
@@ -640,71 +707,139 @@ el("f-branch").addEventListener("change", () => { syncCourseFromBranch(); render
 el("f-inst").addEventListener("change", updateSeatHint);
 syncCourseFromBranch();
 
+
 el("add-btn").addEventListener("click", async () => {
-    if (!jwtToken) {
-        showToast("Error", "You must be authenticated to ingest records.", "danger");
+    const btn = el("add-btn");
+    const msgEl = el("add-msg");
+
+    const recordPayload = {
+        apaar_id: normalizeApaarId(el("f-apaar").value),
+        student_id: el("f-sid").value.trim(),
+        name: el("f-name").value.trim(),
+        institution_id: el("f-inst").value,
+        branch: el("f-branch").value,
+        admission_year: Number(el("f-year").value),
+
+        is_tfw: el("f-tfw")?.checked === true,
+        is_ews: el("f-ews")?.checked === true,
+        is_nri: el("f-nri")?.checked === true,
+        is_fn: el("f-fn")?.checked === true,
+
+        has_consent: el("f-consent").checked
+    };
+
+    if (recordPayload.apaar_id.length < 8) {
+        msgEl.textContent = "Enter a valid APAAR or provisional ID.";
+        msgEl.className = "msg mt-16 tag tag-danger";
         return;
     }
 
-    const btn = el("add-btn");
-    btn.innerText = "Securing...";
-    btn.disabled = true;
+    if (
+        !recordPayload.student_id ||
+        !recordPayload.name ||
+        !recordPayload.institution_id ||
+        !recordPayload.branch ||
+        !Number.isInteger(recordPayload.admission_year)
+    ) {
+        msgEl.textContent = "Complete all required fields.";
+        msgEl.className = "msg mt-16 tag tag-danger";
+        return;
+    }
 
-    const recordPayload = {
-        apaar_id: el("f-apaar").value.trim(), 
-        student_id: el("f-sid").value.trim(), 
-        name: el("f-name").value.trim(),
-        institution_id: el("f-inst").value, 
-        branch: el("f-branch").value, 
-        admission_year: parseInt(el("f-year").value), 
-        is_tfw: el("f-tfw")?.checked || false, 
-        has_consent: el("f-consent").checked
-    };
-    
+    btn.disabled = true;
+    btn.innerText = "Securing Record...";
+
     try {
-        const response = await fetch(`${API_BASE}/api/records/ingest`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${jwtToken}`
-            },
-            body: JSON.stringify(recordPayload)
+        // Backend is the source of truth.
+        const data = await postRecordToLedger(recordPayload);
+
+        // Update local Registry only after backend success.
+        const localRecord = {
+            apaar: recordPayload.apaar_id,
+            sid: recordPayload.student_id,
+            name: recordPayload.name,
+            inst: recordPayload.institution_id,
+            branch: recordPayload.branch,
+            course: el("f-course").value.trim() ||
+                courseFor(recordPayload.branch),
+            year: recordPayload.admission_year,
+
+            tfw: recordPayload.is_tfw,
+            ews: recordPayload.is_ews,
+            nri: recordPayload.is_nri,
+            fn: recordPayload.is_fn,
+
+            sup: false,
+            ghost_flag: false,
+            consent: recordPayload.has_consent
+        };
+
+        const localResult = processRecord(localRecord);
+
+        if (!localResult.success) {
+            console.warn("Local Registry update failed:", localResult.msg);
+        }
+
+        await updateDashboard();
+        updateRecords();
+        updateSeatHint();
+
+        const auditWarning = data.audit_logged === false;
+
+        msgEl.innerText = auditWarning
+            ? `Record saved at Merkle Leaf ${data.index}. Audit logging failed.`
+            : `Record cryptographically secured at Leaf ${data.index}.`;
+
+        msgEl.className = auditWarning
+            ? "msg mt-16 tag tag-warning"
+            : "msg mt-16 tag tag-success";
+
+        // Preserve the ID for certificate verification.
+        const savedApaarId = recordPayload.apaar_id;
+
+        if (recordPayload.has_consent) {
+            const certificateButton = document.createElement("button");
+
+            certificateButton.type = "button";
+            certificateButton.className = "btn btn-primary depth-btn mt-16";
+            certificateButton.textContent = "Generate Certificate";
+
+            certificateButton.addEventListener("click", async () => {
+                document.querySelector('[data-page="verify"]').click();
+
+                el("v-id").value = savedApaarId;
+
+                await performRecordVerification({
+                    apaarId: savedApaarId
+                });
+            });
+
+            msgEl.appendChild(document.createElement("br"));
+            msgEl.appendChild(certificateButton);
+        }
+
+        showToast(
+            auditWarning ? "Record Saved - Audit Warning" : "Admission Confirmed",
+            data.message,
+            auditWarning ? "warning" : "success"
+        );
+
+        ["f-apaar", "f-sid", "f-name"].forEach(id => {
+            el(id).value = "";
         });
 
-        const data = await response.json();
-        const msgEl = el("add-msg");
+    } catch (error) {
+        console.error("INGESTION ERROR:", error);
 
-        if (response.ok) {
-            const auditWarning = data.audit_logged === false;
+        msgEl.textContent = error.message;
+        msgEl.className = "msg mt-16 tag tag-danger";
 
-            msgEl.innerText = auditWarning
-                ? `Record saved at Leaf Index: ${data.index}. Audit logging failed. Do not resubmit.`
-                : `Secured at Leaf Index: ${data.index}`;
-
-            msgEl.className = auditWarning
-                ? `msg mt-16 tag tag-danger`
-                : `msg mt-16 tag tag-success`;
-
-            // Clear UI
-            ["f-apaar", "f-sid", "f-name"].forEach(id => el(id).value = "");
-
-            showToast(
-                auditWarning ? "Record Saved - Audit Warning" : "Admission Confirmed",
-                data.message || "Record cryptographically secured in MongoDB.",
-                auditWarning ? "danger" : "success"
-            );
-        } else {
-            msgEl.innerText = data.error || "Upload failed";
-            msgEl.className = `msg mt-16 tag tag-danger`;
-        }
-    } catch (err) {
-        console.error(err);
-        showToast("Network Error", "Failed to reach backend.", "danger");
     } finally {
-        btn.innerText = "Secure & Upload Record";
         btn.disabled = false;
+        btn.innerText = "Secure & Upload Record";
     }
 });
+
 
 el("sample-btn").addEventListener("click", () => {
     el("csv").value = [
@@ -723,25 +858,123 @@ el("sample-btn").addEventListener("click", () => {
     ].join("\n");
 });
 
-el("csv-btn").addEventListener("click", () => {
-    const lines = el("csv").value.split("\n").map(l => l.trim()).filter(Boolean);
-    let success = 0, errors = 0;
-    lines.forEach(line => {
-        const parts = line.split(",").map(p => p.trim());
-        if (parts.length >= 11) {
-            const y = val => val.toLowerCase() === 'y';
-            const bc = (parts[11] || "").toUpperCase();
-            const res = processRecord({
-                apaar: parts[0], sid: parts[1], name: parts[2], inst: parts[3],
-                course: parts[4], year: parseInt(parts[5]), branch: BRANCH_MAP[bc] ? bc : "",
-                tfw: y(parts[6]), ews: y(parts[7]), fn: y(parts[8]), sup: y(parts[9]), consent: y(parts[10])
-            });
-            if (res.success) success++; else errors++;
-        } else errors++;
-    });
-    el("csv-msg").innerHTML = `<span class="tag tag-success">${success} Ingested</span> <span class="tag tag-danger">${errors} Failed</span>`;
-    updateSeatHint();
+
+el("csv-btn").addEventListener("click", async () => {
+    const btn = el("csv-btn");
+    const msg = el("csv-msg");
+
+    if (!jwtToken) {
+        showToast("Login Required", "Log in before uploading CSV records.", "danger");
+        return;
+    }
+
+    const lines = el("csv").value
+        .split("\n")
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    let success = 0;
+    let errors = 0;
+    const failures = [];
+
+    btn.disabled = true;
+    btn.innerText = "Uploading Records...";
+
+    try {
+        // Sequential upload keeps Merkle leaf ordering predictable.
+        for (let i = 0; i < lines.length; i++) {
+            const parts = lines[i].split(",").map(x => x.trim());
+
+            if (parts.length < 11) {
+                errors++;
+                continue;
+            }
+
+            const yes = value => String(value).toLowerCase() === "y";
+
+            const apaarId = normalizeApaarId(parts[0]);
+            const course = parts[4];
+
+            const branchCode = (parts[11] || "").toUpperCase();
+
+            const branch = BRANCH_MAP[branchCode]
+                ? branchCode
+                : guessBranch(course);
+
+            const payload = {
+                apaar_id: apaarId,
+                student_id: parts[1],
+                name: parts[2],
+                institution_id: parts[3],
+                branch,
+                admission_year: Number(parts[5]),
+
+                is_tfw: yes(parts[6]),
+                is_ews: yes(parts[7]),
+                is_nri: false,
+                is_fn: yes(parts[8]),
+
+                has_consent: yes(parts[10])
+            };
+
+            try {
+                btn.innerText = `Uploading ${i + 1}/${lines.length}...`;
+
+                await postRecordToLedger(payload);
+
+                const result = processRecord({
+                    apaar: apaarId,
+                    sid: payload.student_id,
+                    name: payload.name,
+                    inst: payload.institution_id,
+                    branch,
+                    course,
+                    year: payload.admission_year,
+
+                    tfw: payload.is_tfw,
+                    ews: payload.is_ews,
+                    nri: payload.is_nri,
+                    fn: payload.is_fn,
+                    sup: yes(parts[9]),
+                    ghost_flag: false,
+                    consent: payload.has_consent
+                });
+
+                if (result.success) {
+                    success++;
+                } else {
+                    errors++;
+                    failures.push(`${apaarId}: ${result.msg}`);
+                }
+
+            } catch (error) {
+                errors++;
+                failures.push(`${apaarId}: ${error.message}`);
+            }
+        }
+
+        await updateDashboard();
+        updateRecords();
+        updateSeatHint();
+
+        msg.innerHTML = `
+            <span class="tag tag-success">${success} uploaded</span>
+            <span class="tag tag-danger">${errors} failed</span>
+            ${
+                failures.length
+                    ? `<div class="helper-text mt-16">${
+                        failures.slice(0, 5).map(escapeHTML).join("<br>")
+                    }</div>`
+                    : ""
+            }
+        `;
+
+    } finally {
+        btn.disabled = false;
+        btn.innerText = "Process Batch";
+    }
 });
+
 
 el("reset-btn").addEventListener("click", () => {
     if (confirm("WARNING: This destroys the local ledger and audit trail. Proceed?")) {
@@ -1465,13 +1698,32 @@ async function performRecordVerification({
     out.innerHTML = `<div class="loader-line"></div>`;
 
     try {
+        const normalizedId = normalizeApaarId(apaarId);
+
         const endpoint = apaarHmac
-            ? `${API_BASE}/api/records/verify-hmac/${encodeURIComponent(apaarHmac)}`
-            : `${API_BASE}/api/records/generate-qr/${encodeURIComponent(apaarId)}`;
+        ? `${API_BASE}/api/records/verify-hmac/${encodeURIComponent(apaarHmac)}`
+        : `${API_BASE}/api/records/generate-qr/${encodeURIComponent(normalizedId)}`;
+        const fetchVerification = async () => {
+    const r = await fetch(endpoint);
+    return { response: r, payload: await r.json().catch(() => ({})) };
+};
 
-        const response = await fetch(endpoint);
+let { response, payload } = await fetchVerification();
 
-        const payload = await response.json().catch(() => ({}));
+if (response.status === 404 && !apaarHmac) {
+    const local = db.records.find(r => r.apaar === normalizedId);
+    if (local) {
+        if (!jwtToken) {
+            out.innerHTML = `<div class="depth-card"><p class="text-danger">
+                This record exists only in the local registry. Log in as AICTE Admin
+                (2FA) so it can be synced to the ledger.</p></div>`;
+            return;
+        }
+        out.innerHTML = `<div class="loader-line"></div>`;
+        await syncRecordsToBackend([local]);
+        ({ response, payload } = await fetchVerification());
+    }
+}
 
         if (response.status === 403) {
             out.innerHTML = `
@@ -1549,15 +1801,13 @@ async function performRecordVerification({
 
 // Manual verification using a 12-digit APAAR ID.
 el("v-btn").addEventListener("click", async () => {
-    const rawId = el("v-id").value
-        .trim()
-        .replace(/[\s-]/g, "");
+    const rawId = normalizeApaarId(el("v-id").value);
 
-    if (!/^\d{12}$/.test(rawId)) {
+    if (rawId.length < 8) {
         el("v-out").innerHTML = `
             <div class="depth-card">
                 <p class="text-danger">
-                    Enter a valid 12-digit APAAR ID.
+                    Enter a valid APAAR or provisional ID.
                 </p>
             </div>`;
         return;
@@ -1618,6 +1868,16 @@ el("docker-btn").addEventListener("click", async () => {
 
         db.records = data.records;
         db.merkleRoot = data.merkle_root;
+
+        msg.innerHTML = `<span class="tag tag-info">Syncing to ledger…</span>`;
+        try {
+            const t = await syncRecordsToBackend(db.records, (d, n) => {
+                msg.innerHTML = `<span class="tag tag-info">Syncing ${d}/${n}…</span>`;
+            });
+            console.log('Ledger sync:', t);
+        } catch (e) {
+            console.warn('Ledger sync failed:', e.message);
+        }
 
         logAudit(
             "MASS_INGESTION",
