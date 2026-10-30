@@ -125,8 +125,12 @@
             return;
         }
         if (recordHistory !== false) beginSignInHistoryStep();
+        if (typeof window.setPendingAuthRole === "function" && typeof pendingRole !== "undefined") {
+            window.setPendingAuthRole(pendingRole);
+        }
         modal.style.zIndex = "10000";
         modal.classList.remove("hidden");
+        modal.setAttribute("aria-hidden", "false");
         var otp = document.querySelector(".otp-input");
         if (otp) otp.focus();
     }
@@ -136,11 +140,34 @@
         if (role === "employer") {
             var select = document.getElementById("role");
             if (select) select.value = role;
-            if (typeof window.applyRole === "function") window.applyRole(role);
+            var applied = typeof window.applyRole === "function" && window.applyRole(role) === true;
+            if (applied) completeRoleSelection(role);
             return;
         }
-        if (typeof pendingRole !== "undefined") pendingRole = role;
+        if (typeof window.setPendingAuthRole === "function") {
+            window.setPendingAuthRole(role);
+        } else if (typeof pendingRole !== "undefined") {
+            pendingRole = role;
+        }
         openTwoFactor();
+    }
+
+    function completeRoleSelection(role) {
+        var isEmployer = role === "employer";
+        var authenticated = typeof jwtToken !== "undefined" && !!jwtToken &&
+            typeof jwtRole !== "undefined" &&
+            ((role === "institution" && jwtRole === "INSTITUTION") ||
+             ((role === "aicte" || role === "audit") && jwtRole === "AICTE"));
+        if (!isEmployer && !authenticated) return false;
+
+        waiting = false;
+        var modal = document.getElementById("m-2fa");
+        if (modal) {
+            modal.classList.add("hidden");
+            modal.setAttribute("aria-hidden", "true");
+        }
+        hide();
+        return true;
     }
 
     function build() {
@@ -210,22 +237,10 @@
         }
         build();
 
-        var originalApplyRole = window.applyRole;
-        window.applyRole = function () {
-            var role = arguments[0];
-            var result = originalApplyRole.apply(this, arguments);
-            var isEmployer = role === "employer";
-            var authenticated = typeof jwtToken !== "undefined" && !!jwtToken &&
-                typeof jwtRole !== "undefined" &&
-                ((role === "institution" && jwtRole === "INSTITUTION") ||
-                 ((role === "aicte" || role === "audit") && jwtRole === "AICTE"));
-            if (waiting && (isEmployer || authenticated)) {
-                waiting = false;
-                hide();
-            }
-            return result;
-        };
-
+        // Keep role activation and entry-screen dismissal as separate explicit
+        // steps. The previous applyRole monkey-patch could leave the OTP modal
+        // open even after the backend had issued a valid JWT.
+        window.completeEntryRoleSelection = completeRoleSelection;
         window.cancelEntryRoleSelection = cancelSelection;
         window.showEntryGate = function () { show("pop"); };
         window.hideEntryGate = hide;

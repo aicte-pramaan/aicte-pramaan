@@ -803,8 +803,25 @@ document.querySelectorAll(".nav-menu a").forEach(link => {
     });
 });
 
-// 🔐 Role switcher: all protected roles must obtain the matching backend JWT.
-let pendingRole = 'aicte';
+// 🔐 Role switcher: choose a profile first, then authenticate that exact role.
+let pendingRole = "aicte";
+
+function setPendingAuthRole(role) {
+    const allowed = new Set(["aicte", "audit", "institution"]);
+    if (!allowed.has(role)) return false;
+    pendingRole = role;
+
+    const roleSelect = el("role");
+    const option = roleSelect && [...roleSelect.options].find(item => item.value === role);
+    const roleLabel = el("signin-role-label");
+    if (roleLabel) roleLabel.textContent = `Signing in as: ${option ? option.textContent.replace(/\s*\([^)]*\)\s*$/, "") : role}`;
+
+    const status = el("signin-status");
+    if (status) status.textContent = "Enter the six-digit demo code 123456. This mock backend does not use a real authenticator app.";
+    return true;
+}
+window.setPendingAuthRole = setPendingAuthRole;
+
 el("role").addEventListener("change", (e) => {
     const requestedRole = e.target.value;
     const currentRole = document.body.getAttribute("data-role") || "aicte";
@@ -813,13 +830,17 @@ el("role").addEventListener("change", (e) => {
         // Employer verification endpoints are intentionally public/read-only.
         jwtToken = "";
         jwtRole = "";
-        applyRole("employer");
+        const applied = applyRole("employer");
+        if (applied && typeof window.completeEntryRoleSelection === "function") {
+            window.completeEntryRoleSelection("employer");
+        }
         return;
     }
 
-    // Do not change the visible role until the API authenticates it.
+    // Keep the current active profile visible until the selected profile is authenticated.
     e.target.value = currentRole;
-    pendingRole = requestedRole;
+    setPendingAuthRole(requestedRole);
+
     const modal = el("m-2fa");
     if (!modal) {
         showToast("Sign-in unavailable", "The authentication dialog is missing.", "danger");
@@ -827,6 +848,7 @@ el("role").addEventListener("change", (e) => {
     }
     if (typeof window.beginEntrySignInStep === "function") window.beginEntrySignInStep();
     modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
     const firstOtp = document.querySelector(".otp-input");
     if (firstOtp) firstOtp.focus();
 });
@@ -881,6 +903,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 60000);
+    let tokenWasIssued = false;
 
     try {
         const response = await fetch(`${API_BASE}/api/auth/login`, {
@@ -902,16 +925,47 @@ el("btn-2fa-verify").addEventListener("click", async () => {
             throw new Error(`Backend returned role ${data.role || "unknown"}; expected ${expectedApiRole}.`);
         }
 
+        // Save the selected role before changing any UI state.
+        const authenticatedRole = pendingRole;
         jwtToken = data.access_token;
         jwtRole = data.role;
-        if (signInStatus) signInStatus.textContent = "Authentication successful.";
+        tokenWasIssued = true;
+
+        // Replace the temporary #signin history entry first. applyRole() then
+        // adds the destination page (e.g. #dash) as the next browser step.
+        if (typeof window.completeEntrySignInStep === "function") {
+            window.completeEntrySignInStep();
+        }
+
+        el("role").value = authenticatedRole;
+        const roleApplied = applyRole(authenticatedRole);
+        if (roleApplied !== true) {
+            jwtToken = "";
+            jwtRole = "";
+            throw new Error("The backend authenticated you, but the selected profile could not be activated. Please choose the profile and try again.");
+        }
+
+        // Explicitly complete both layers. Do not rely on wrapping/replacing
+        // the global applyRole function to close the entry screen.
         el("m-2fa")?.classList.add("hidden");
-        if (typeof window.completeEntrySignInStep === "function") window.completeEntrySignInStep();
-        el("role").value = pendingRole;
+        el("m-2fa")?.setAttribute("aria-hidden", "true");
         inputs.forEach(input => { input.value = ""; });
-        applyRole(pendingRole);
-        showToast("Authenticated", `Backend session established for ${pendingRole.toUpperCase()}.`, "success");
+        const completed = typeof window.completeEntryRoleSelection === "function"
+            ? window.completeEntryRoleSelection(authenticatedRole)
+            : (typeof window.hideEntryGate === "function" ? (window.hideEntryGate(), true) : true);
+        if (completed !== true) {
+            throw new Error("Your session is authenticated, but the entry screen did not close. Reload the page and sign in again.");
+        }
+
+        if (signInStatus) signInStatus.textContent = `Authenticated as ${authenticatedRole}.`;
+        showToast("Authenticated", `Backend session established for ${authenticatedRole.toUpperCase()}.`, "success");
     } catch (error) {
+        // A rejected login never sets a token. If activation failed after a token
+        // was issued, clear it so the UI cannot show a false authenticated state.
+        if (tokenWasIssued) {
+            jwtToken = "";
+            jwtRole = "";
+        }
         const message = error.name === "AbortError"
             ? "Sign-in timed out. The Render API may be starting; retry."
             : error.message || "Unable to sign in.";
@@ -933,26 +987,41 @@ el("btn-2fa-cancel")?.addEventListener("click", () => {
 });
 
 function applyRole(role) {
+    if (!["aicte", "audit", "institution", "employer"].includes(role)) {
+        showToast("Invalid profile", "Choose one of the available profiles.", "danger");
+        return false;
+    }
+
     if (role === "employer") {
         jwtToken = "";
         jwtRole = "";
     } else {
         const expected = role === "institution" ? "INSTITUTION" : "AICTE";
         if (!jwtToken || jwtRole !== expected) {
-            showToast("Authentication required", "Sign in with the matching backend account before switching to this role.", "danger");
-            return;
+            showToast("Authentication required", "Sign in with the matching backend account before switching to this profile.", "danger");
+            return false;
         }
     }
-    document.body.setAttribute("data-role", role);
-    const roleText = el("role").options[el("role").selectedIndex].text;
-    el("current-user-display").innerText = roleText.split(" (")[0]; 
-    
-    // UI Navigation Routing
-    if (role === "employer") document.querySelector('[data-page="verify"]').click();
-    else if (role === "audit") document.querySelector('[data-page="audit"]').click();
-    else document.querySelector('[data-page="dash"]').click();
 
-    // 🔐 Institution Data Lock (Prevents them from uploading for other colleges)
+    document.body.setAttribute("data-role", role);
+    const roleSelect = el("role");
+    const selectedOption = roleSelect && roleSelect.options[roleSelect.selectedIndex];
+    const roleText = selectedOption ? selectedOption.text : role;
+    el("current-user-display").innerText = roleText.split(" (")[0];
+
+    // Navigate directly rather than synthesizing a click. This returns a clear
+    // success value to the login flow and avoids a second render of the page.
+    const landingPage = role === "employer" ? "verify" : (role === "audit" ? "audit" : "dash");
+    const navigated = typeof window.navigateToPage === "function"
+        ? window.navigateToPage(landingPage, true)
+        : false;
+    if (!navigated) {
+        const link = document.querySelector(`[data-page="${landingPage}"]`);
+        if (link) link.click();
+        else return false;
+    }
+
+    // Institution Officer is restricted to INST001 in the UI as well as on the API.
     const instSelect = el("f-inst");
     if (instSelect) {
         if (role === "institution") {
@@ -962,10 +1031,12 @@ function applyRole(role) {
             instSelect.disabled = false;
         }
     }
-    
-    // Force a re-render so Dashboard stats update to reflect the RBAC filtering
-    renderPage(activePage());
+
+    // Refresh current data after the role scope changes.
+    if (typeof renderPage === "function") renderPage(activePage());
+    return true;
 }
+window.applyRole = applyRole;
 
 el("branch-filter")?.addEventListener("change", e => {
     branchScope = e.target.value;
