@@ -1,7 +1,8 @@
 const API_BASE = "https://aicte-pramaan-api.onrender.com";
 const TRUSTED_ED25519_PUBLIC_KEY =
     "b4d6a4f061910c638906414e99cc6a8e0dae3e947ccb9557165c35dd08a8ba63";
-let jwtToken = ""; // Stores the backend JWT session token
+let jwtToken = ""; // In-memory backend JWT session token
+let jwtRole = "";  // Backend role claim: AICTE, INSTITUTION, EMPLOYER
 
 // ----------------------------------------------------------------------
 // Sync SHA-256 (used for the hash-chained audit trail)
@@ -362,7 +363,7 @@ const toLedgerPayload = r => ({
 });
 
 async function syncRecordsToBackend(records, onProgress) {
-    if (!jwtToken) throw new Error('Log in as AICTE Admin first.');
+    if (!jwtToken || jwtRole !== 'AICTE') throw new Error('Log in as AICTE Admin first.');
     const totals = { inserted: 0, already_present: 0, invalid: 0 };
     const CHUNK = 1000;
 
@@ -510,22 +511,70 @@ function verifyChain() {
 
 const shortHash = h => "0x" + h.slice(0, 4) + "..." + h.slice(-4);
 
-function updateAudit() {
-    const chain = verifyChain();
-    el("chain-status").innerHTML = chain.ok ? pill(`Chain valid · ${db.audit.length} blocks`, "ok") : pill(`Chain broken at block #${chain.block}`, "er");
+async function updateAudit() {
+    const status = el("chain-status");
+    const table = el("audit-table");
+    if (!table || !status) return;
 
+    // Prefer the backend's MongoDB audit chain when the session permits it.
+    if (jwtToken && ["AICTE", "EMPLOYER"].includes(jwtRole)) {
+        status.innerHTML = pill("Checking backend audit chain…", "in");
+        try {
+            const response = await fetch(`${API_BASE}/api/audit/verify-chain`, {
+                headers: { Authorization: `Bearer ${jwtToken}` }
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || `Audit API error ${response.status}`);
+
+            const logs = Array.isArray(data.logs) ? data.logs : [];
+            status.innerHTML = data.is_valid
+                ? pill(`Backend chain valid · ${data.chain_length} blocks`, "ok")
+                : pill(`Backend chain broken · ${data.broken_blocks?.length || 0} issue(s)`, "er");
+
+            let html = `<tr><th>Block</th><th>Action · Actor</th><th>PrevHash → CurrHash</th><th>Event Details</th></tr>`;
+            if (!logs.length) html += `<tr><td colspan="4" class="text-center helper-text">No backend audit events found.</td></tr>`;
+            logs.slice(0, 100).forEach((item, index) => {
+                const block = item.block ?? (logs.length - index);
+                const timestampValue = item.createdAt || item.timestamp || "";
+                const timestamp = timestampValue ? new Date(timestampValue).toLocaleString() : "";
+                const prev = item.prev_hash || item.prev || GENESIS;
+                const hash = item.block_hash || item.hash || "";
+                const action = item.action || item.event_type || "Audit event";
+                const actor = item.actor_role || item.role || "—";
+                const details = item.purpose || item.details || item.target_hmac || "";
+                html += `<tr>
+                    <td class="mono nw">#${escapeHTML(block)}<span class="sub">${escapeHTML(timestamp)}</span></td>
+                    <td class="mono">${escapeHTML(action)}<span class="sub">${escapeHTML(actor)}</span></td>
+                    <td class="mono nw"><span class="hash" data-full="${escapeHTML(prev)}" title="Click to copy">${escapeHTML(shortHash(String(prev)))}</span> → <span class="hash" data-full="${escapeHTML(hash)}" title="Click to copy">${escapeHTML(shortHash(String(hash)))}</span></td>
+                    <td>${escapeHTML(details)}</td>
+                </tr>`;
+            });
+            table.innerHTML = html;
+            return;
+        } catch (error) {
+            console.error("Backend audit verification failed:", error);
+            status.innerHTML = pill("Backend unavailable · showing local demo trail", "wn");
+        }
+    } else {
+        status.innerHTML = pill("Backend audit requires AICTE session", "wn");
+    }
+
+    // Explicit fallback: this is the browser-local hash chain, not MongoDB.
+    const chain = verifyChain();
     let html = `<tr><th>Block</th><th>Action · Actor</th><th>PrevHash → CurrHash</th><th>Event Details</th></tr>`;
-    if (db.audit.length === 0) html += `<tr><td colspan="4" class="text-center helper-text">No events recorded yet.</td></tr>`;
-    
-    db.audit.slice(0, 100).forEach(a => {
+    if (!db.audit.length) html += `<tr><td colspan="4" class="text-center helper-text">No local demo events recorded.</td></tr>`;
+    db.audit.slice(0, 100).forEach(item => {
         html += `<tr>
-            <td class="mono nw">#${a.block}<span class="sub">${a.timestamp} UTC</span></td>
-            <td class="mono">${escapeHTML(a.action)}<span class="sub">${escapeHTML(a.role)}</span></td>
-            <td class="mono nw"><span class="hash" data-full="${a.prev}" title="Click to copy">${shortHash(a.prev)}</span> → <span class="hash" data-full="${a.hash}" title="Click to copy">${shortHash(a.hash)}</span></td>
-            <td>${escapeHTML(a.details)}</td>
+            <td class="mono nw">#${escapeHTML(item.block)}<span class="sub">${escapeHTML(item.timestamp)} local</span></td>
+            <td class="mono">${escapeHTML(item.action)}<span class="sub">${escapeHTML(item.role)}</span></td>
+            <td class="mono nw"><span class="hash" data-full="${escapeHTML(item.prev)}" title="Click to copy">${escapeHTML(shortHash(item.prev))}</span> → <span class="hash" data-full="${escapeHTML(item.hash)}" title="Click to copy">${escapeHTML(shortHash(item.hash))}</span></td>
+            <td>${escapeHTML(item.details)}</td>
         </tr>`;
     });
-    el("audit-table").innerHTML = html;
+    table.innerHTML = html;
+    if (!chain.ok && status.textContent.includes("Backend unavailable")) {
+        status.innerHTML += " " + pill(`Local chain broken at #${chain.block}`, "er");
+    }
 }
 
 // Branch UI Injection
@@ -650,12 +699,13 @@ let renderPage = function(p) {
     if (p === "dash") updateDashboard();
     if (p === "records") updateRecords();
     if (p === "audit") updateAudit();
-    if (p === "vigilance") { 
-        updateVigilance(); 
-        initVigilanceCharts(); 
-        renderFuzzyMatches(); 
+    if (p === "vigilance") {
+        updateVigilance();
+        initVigilanceCharts();
+        renderFuzzyMatches();
     }
-    if (p === "impact") { initCharts(); updateAnalyticsData(); }
+    if (p === "impact") updateAnalyticsData();
+    if (p === "review") renderReviewQueue();
 }
 
 const activePage = () => {
@@ -677,89 +727,140 @@ document.querySelectorAll(".nav-menu a").forEach(link => {
     });
 });
 
-// 🔐 2FA & Advanced Role Switcher
+// 🔐 Role switcher: all protected roles must obtain the matching backend JWT.
 let pendingRole = 'aicte';
 el("role").addEventListener("change", (e) => {
-    const role = e.target.value;
-    
-    // Trigger 2FA for sensitive roles
-    if (role === "aicte" || role === "audit") {
-        e.target.value = document.body.getAttribute("data-role") || 'institution'; // Revert visually
-        pendingRole = role;
-        el("m-2fa").classList.remove("hidden");
-        document.querySelectorAll(".otp-input")[0].focus();
-    } else {
-        applyRole(role);
-    }
-});
+    const requestedRole = e.target.value;
+    const currentRole = document.body.getAttribute("data-role") || "aicte";
 
-// 2FA Input Auto-Advance Logic
-document.querySelectorAll(".otp-input").forEach((input, index, inputs) => {
-    input.addEventListener("input", (e) => {
-        if (e.target.value.length === 1 && index < inputs.length - 1) {
-            inputs[index + 1].focus();
-        }
-    });
-});
-
-// 2FA Verification Simulation
-// Live 2FA & JWT Authentication
-el("btn-2fa-verify").addEventListener("click", async () => {
-    const btn = el("btn-2fa-verify");
-    const otpCode = [...document.querySelectorAll(".otp-input")]
-        .map(input => input.value.trim())
-        .join("");
-
-    if (!/^\d{6}$/.test(otpCode)) {
-        showToast("TOTP Required", "Enter all six digits from your authenticator app.", "danger");
+    if (requestedRole === "employer") {
+        // Employer verification endpoints are intentionally public/read-only.
+        jwtToken = "";
+        jwtRole = "";
+        applyRole("employer");
         return;
     }
 
+    // Do not change the visible role until the API authenticates it.
+    e.target.value = currentRole;
+    pendingRole = requestedRole;
+    const modal = el("m-2fa");
+    if (!modal) {
+        showToast("Sign-in unavailable", "The authentication dialog is missing.", "danger");
+        return;
+    }
+    modal.classList.remove("hidden");
+    const firstOtp = document.querySelector(".otp-input");
+    if (firstOtp) firstOtp.focus();
+});
+
+// 2FA input handling: digits only, paste-friendly, and keyboard accessible.
+(function setupOtpInputs() {
+    const inputs = [...document.querySelectorAll(".otp-input")];
+    inputs.forEach((input, index) => {
+        input.inputMode = "numeric";
+        input.autocomplete = index === 0 ? "one-time-code" : "off";
+        input.pattern = "[0-9]";
+        input.addEventListener("input", () => {
+            const digits = input.value.replace(/\D/g, "").slice(-1);
+            input.value = digits;
+            if (digits && inputs[index + 1]) inputs[index + 1].focus();
+        });
+        input.addEventListener("keydown", (event) => {
+            if (event.key === "Backspace" && !input.value && inputs[index - 1]) {
+                inputs[index - 1].focus();
+            }
+            if (event.key === "Enter") el("btn-2fa-verify")?.click();
+        });
+        input.addEventListener("paste", (event) => {
+            const pasted = (event.clipboardData || window.clipboardData)
+                .getData("text").replace(/\D/g, "").slice(0, inputs.length);
+            if (!pasted) return;
+            event.preventDefault();
+            inputs.forEach((field, i) => { field.value = pasted[i] || ""; });
+            (inputs[Math.min(pasted.length, inputs.length) - 1] || inputs[0]).focus();
+        });
+    });
+})();
+
+// Backend login. This project currently uses the mock credentials in authRoutes.js;
+// the API's demo TOTP is 123456. This is demo authentication, not production 2FA.
+el("btn-2fa-verify").addEventListener("click", async () => {
+    const btn = el("btn-2fa-verify");
+    const inputs = [...document.querySelectorAll(".otp-input")];
+    const otpCode = inputs.map(input => input.value.trim()).join("");
+
+    if (!/^\d{6}$/.test(otpCode)) {
+        showToast("TOTP Required", "Enter all six digits. The current mock backend accepts 123456.", "danger");
+        return;
+    }
+
+    const isInstitution = pendingRole === "institution";
+    const expectedApiRole = isInstitution ? "INSTITUTION" : "AICTE";
     btn.disabled = true;
-    btn.innerHTML = `Verifying TOTP...`;
+    btn.textContent = "Verifying sign-in…";
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+    const timeout = window.setTimeout(() => controller.abort(), 60000);
 
     try {
         const response = await fetch(`${API_BASE}/api/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                username: pendingRole === 'institution' ? 'INST001' : 'AICTE_ADMIN',
-                password: pendingRole === 'institution' ? 'password123' : 'admin123',
+                username: isInstitution ? "INST001" : "AICTE_ADMIN",
+                password: isInstitution ? "password123" : "admin123",
                 totp_code: otpCode
             }),
             signal: controller.signal
         });
+        const data = await response.json().catch(() => ({}));
 
-        clearTimeout(timeout);
-        const data = await response.json();
-
-        if (data.access_token) {
-            jwtToken = data.access_token;
-            el("m-2fa").classList.add("hidden");
-            btn.innerHTML = "Verify & Authenticate";
-            el("role").value = pendingRole;
-            applyRole(pendingRole);
-            document.querySelectorAll(".otp-input").forEach(i => i.value = "");
-            showToast("Security", `Connected to Backend. Role: ${pendingRole.toUpperCase()}`, "success");
-        } else {
-            showToast("Auth Failed", data.error || "Invalid credentials", "danger");
+        if (!response.ok || !data.access_token) {
+            throw new Error(data.error || `Sign-in failed (${response.status}).`);
         }
-    } catch (err) {
-        clearTimeout(timeout);
-        const msg = err.name === 'AbortError'
-            ? "Request timed out — backend may be cold-starting. Try again in 30 seconds."
-            : "Cannot reach the backend. Check your network or the Render service status.";
-        showToast("Network Error", msg, "danger");
+        if (data.role !== expectedApiRole) {
+            throw new Error(`Backend returned role ${data.role || "unknown"}; expected ${expectedApiRole}.`);
+        }
+
+        jwtToken = data.access_token;
+        jwtRole = data.role;
+        el("m-2fa")?.classList.add("hidden");
+        el("role").value = pendingRole;
+        inputs.forEach(input => { input.value = ""; });
+        applyRole(pendingRole);
+        showToast("Authenticated", `Backend session established for ${pendingRole.toUpperCase()}.`, "success");
+    } catch (error) {
+        const message = error.name === "AbortError"
+            ? "Sign-in timed out. The Render API may be starting; retry."
+            : error.message || "Unable to sign in.";
+        showToast("Sign-in failed", message, "danger");
     } finally {
+        window.clearTimeout(timeout);
         btn.disabled = false;
-        btn.innerHTML = "Verify & Authenticate";
+        btn.textContent = "Verify & Authenticate";
     }
 });
 
+// Cancel sign-in without changing the currently active role.
+el("btn-2fa-cancel")?.addEventListener("click", () => {
+    el("m-2fa")?.classList.add("hidden");
+    document.querySelectorAll(".otp-input").forEach(input => { input.value = ""; });
+    el("role").value = document.body.getAttribute("data-role") || "aicte";
+    if (typeof window.cancelEntryRoleSelection === "function") window.cancelEntryRoleSelection();
+});
+
 function applyRole(role) {
+    if (role === "employer") {
+        jwtToken = "";
+        jwtRole = "";
+    } else {
+        const expected = role === "institution" ? "INSTITUTION" : "AICTE";
+        if (!jwtToken || jwtRole !== expected) {
+            showToast("Authentication required", "Sign in with the matching backend account before switching to this role.", "danger");
+            return;
+        }
+    }
     document.body.setAttribute("data-role", role);
     const roleText = el("role").options[el("role").selectedIndex].text;
     el("current-user-display").innerText = roleText.split(" (")[0]; 
@@ -784,7 +885,7 @@ function applyRole(role) {
     renderPage(activePage());
 }
 
-el("branch-filter").addEventListener("change", e => {
+el("branch-filter")?.addEventListener("change", e => {
     branchScope = e.target.value;
     recPage = 0;
     if (branchScope !== "ALL" && el("f-branch")) {
@@ -970,6 +1071,12 @@ el("csv-btn").addEventListener("click", async () => {
         .map(line => line.trim())
         .filter(Boolean);
 
+    if (!lines.length) {
+        msg.textContent = "Paste CSV records or use Load Sample Data first.";
+        msg.className = "msg mt-16 tag tag-warning";
+        return;
+    }
+
     let success = 0;
     let errors = 0;
     const failures = [];
@@ -1066,6 +1173,9 @@ el("csv-btn").addEventListener("click", async () => {
             }
         `;
 
+    } catch (error) {
+        console.error("CSV ingestion failed:", error);
+        msg.innerHTML = `<span class="tag tag-danger">Batch stopped: ${escapeHTML(error.message || "Unexpected error")}</span>`;
     } finally {
         btn.disabled = false;
         btn.innerText = "Process Batch";
@@ -1074,11 +1184,11 @@ el("csv-btn").addEventListener("click", async () => {
 
 
 el("reset-btn").addEventListener("click", () => {
-    if (confirm("WARNING: This destroys the local ledger and audit trail. Proceed?")) {
+    if (confirm("This clears only this browser's local demo registry and audit cache. MongoDB records on the backend will NOT be deleted. Continue?")) {
         db = { records: [], audit: [] };
         saveDB();
         logAudit("SYSTEM_PURGE", "Ledger reset to genesis block.");
-        el("csv-msg").innerHTML = `<span class="tag tag-warning">Database Purged</span>`;
+        el("csv-msg").innerHTML = `<span class="tag tag-warning">Local demo cache cleared. Backend records are unchanged.</span>`;
         updateDashboard();
         updateSeatHint();
     }
@@ -1969,10 +2079,21 @@ document.addEventListener("click", async (e) => {
         msg.innerHTML = `<span class="tag tag-info">Synthesizing 300 records via Polars...</span>`;
 
         // 1. Fetch from Docker Data Engine
-        const engineRes = await fetch(`${API_BASE_URL}/stream-records?count=300`);
-        const data = await engineRes.json();
-        
-        if (!engineRes.ok) throw new Error(data.error || "Failed to generate records");
+        const engineController = new AbortController();
+        const engineTimeout = window.setTimeout(() => engineController.abort(), 60000);
+        let engineRes;
+        let data;
+        try {
+            engineRes = await fetch(`${API_BASE_URL}/stream-records?count=300`, {
+                signal: engineController.signal
+            });
+            data = await engineRes.json().catch(() => ({}));
+        } finally {
+            window.clearTimeout(engineTimeout);
+        }
+
+        if (!engineRes.ok) throw new Error(data.error || `Data Engine error ${engineRes.status}`);
+        if (!Array.isArray(data.records)) throw new Error("Data Engine response is missing a records array.");
 
         const engineRecords = data.records.map(r => {
             const branchCode = guessBranch(r.course || "");
@@ -2018,22 +2139,29 @@ document.addEventListener("click", async (e) => {
         }
 
         // 3. Mirror records locally
-        db.records = engineRecords.map(r => ({
-            apaar:  r.apaar_id,
-            sid:    r.student_id,
-            name:   r.name,
-            inst:   r.institution_id,
-            branch: r.branch,
-            course: courseFor(r.branch) || r.branch,
-            year:   r.admission_year,
-            tfw:    r.is_tfw,
-            ews:    r.is_ews,
-            nri:    r.is_nri,
-            fn:     r.is_fn,
-            sup:    false,
-            ghost_flag: false,
-            consent: r.has_consent
-        }));
+        const existingLocal = new Map(db.records.map(r => [`${r.apaar}|${r.inst}`, r]));
+        for (const r of engineRecords) {
+            const key = `${r.apaar_id}|${r.institution_id}`;
+            if (!existingLocal.has(key)) {
+                existingLocal.set(key, {
+                    apaar: r.apaar_id,
+                    sid: r.student_id,
+                    name: r.name,
+                    inst: r.institution_id,
+                    branch: r.branch,
+                    course: courseFor(r.branch) || r.branch,
+                    year: r.admission_year,
+                    tfw: r.is_tfw,
+                    ews: r.is_ews,
+                    nri: r.is_nri,
+                    fn: r.is_fn,
+                    sup: false,
+                    ghost_flag: false,
+                    consent: r.has_consent
+                });
+            }
+        }
+        db.records = [...existingLocal.values()];
         
         db.merkleRoot = data.merkle_root || "";
         saveDB();
@@ -2067,7 +2195,7 @@ document.addEventListener("click", async (e) => {
     } catch (error) {
         console.error("Stream/sync failed:", error);
         const userMsg = error.name === 'AbortError'
-            ? "Timed out — data engine is cold-starting. Wait 60s and retry."
+            ? "Data Engine request timed out. Retry after checking its Render service status."
             : error.message;
         msg.innerHTML = `<span class="tag tag-danger">Failed: ${escapeHTML(userMsg)}</span>`;
     } finally {
@@ -2134,6 +2262,281 @@ document.addEventListener("click", async (e) => {
     fetch(`${API_BASE_URL}/`,    { method: 'GET' }).catch(() => {});
 })();
 
+
+// ======================================================================
+// MISSING UI FEATURES — DEMO-ONLY ACTIONS / REPORTS / CHARTS / REVIEW QUEUE
+// These features are local simulations unless a backend route is explicitly
+// configured. They never pretend to call JOSAA, DigiLocker or adjudication APIs.
+// ======================================================================
+
+const reviewItems = [
+    { id: "APL-2026-001", student: "Sample Student A", institution: "INST001", issue: "APAAR identity mismatch", status: "Pending" },
+    { id: "APL-2026-002", student: "Sample Student B", institution: "INST002", issue: "Quota document clarification", status: "Pending" },
+    { id: "APL-2026-003", student: "Sample Student C", institution: "INST003", issue: "Admission-year correction", status: "Pending" }
+];
+let selectedReviewId = null;
+const chartRegistry = Object.create(null);
+
+function renderReviewQueue() {
+    const table = el("review-table");
+    if (!table) return;
+    let html = `<tr><th>Reference</th><th>Student</th><th>Institution</th><th>Issue</th><th>Status</th><th>Action</th></tr>`;
+    const pending = reviewItems.filter(item => item.status === "Pending");
+    if (!pending.length) {
+        html += `<tr><td colspan="6" class="text-center helper-text">No pending demo appeals.</td></tr>`;
+    }
+    pending.forEach(item => {
+        html += `<tr>
+            <td class="mono">${escapeHTML(item.id)}</td>
+            <td>${escapeHTML(item.student)}</td>
+            <td>${escapeHTML(item.institution)}</td>
+            <td>${escapeHTML(item.issue)}</td>
+            <td>${pill("Pending · demo", "wn")}</td>
+            <td><button type="button" class="btn btn-secondary depth-btn" data-review-id="${escapeHTML(item.id)}">Review</button></td>
+        </tr>`;
+    });
+    table.innerHTML = html;
+}
+
+document.addEventListener("click", event => {
+    const openReviewButton = event.target.closest("[data-review-id]");
+    if (!openReviewButton) return;
+    selectedReviewId = openReviewButton.getAttribute("data-review-id");
+    const item = reviewItems.find(entry => entry.id === selectedReviewId);
+    if (!item) return;
+    const details = el("review-details");
+    if (details) {
+        details.innerHTML = `<dt>Reference</dt><dd>${escapeHTML(item.id)}</dd>
+            <dt>Student</dt><dd>${escapeHTML(item.student)}</dd>
+            <dt>Institution</dt><dd>${escapeHTML(item.institution)}</dd>
+            <dt>Issue</dt><dd>${escapeHTML(item.issue)}</dd>
+            <dt>Scope</dt><dd>Local demonstration only</dd>`;
+    }
+    if (el("review-reason")) el("review-reason").value = "";
+    el("m-review")?.classList.remove("hidden");
+});
+
+function closeReviewModal() {
+    el("m-review")?.classList.add("hidden");
+    selectedReviewId = null;
+}
+
+function decideDemoReview(decision) {
+    const item = reviewItems.find(entry => entry.id === selectedReviewId);
+    if (!item) {
+        showToast("No appeal selected", "Choose an appeal from the review table first.", "warning");
+        return;
+    }
+    const reason = (el("review-reason")?.value || "").trim();
+    if (!reason) {
+        showToast("Reason required", "Enter an officer comment before recording this demo decision.", "warning");
+        el("review-reason")?.focus();
+        return;
+    }
+    item.status = decision === "approve" ? "Approved (local demo)" : "Rejected (local demo)";
+    logAudit(decision === "approve" ? "DEMO_APPEAL_APPROVED" : "DEMO_APPEAL_REJECTED",
+        `${item.id}: ${reason} [local demo only; no backend adjudication route configured]`);
+    saveDB();
+    closeReviewModal();
+    renderReviewQueue();
+    updateAudit();
+    showToast("Demo decision recorded", `${item.id} was updated in this browser only. No official decision was submitted.`, "info");
+}
+
+el("btn-approve-appeal")?.addEventListener("click", () => decideDemoReview("approve"));
+el("btn-reject-appeal")?.addEventListener("click", () => decideDemoReview("reject"));
+
+// The project has no JOSAA/State CET credentials or route. Surface that clearly.
+el("btn-josaa")?.addEventListener("click", () => {
+    const terminal = el("josaa-terminal");
+    const logs = el("josaa-logs");
+    const status = el("josaa-log-status");
+    if (terminal) terminal.classList.remove("hidden");
+    if (status) status.textContent = "Not configured";
+    if (logs) {
+        logs.innerHTML = [
+            "Demo gateway selected.",
+            "No JOSAA / State CET API endpoint is configured in this project.",
+            "No external request was sent and no student records were changed.",
+            "Configure an authorised provider endpoint and credentials to enable live sync."
+        ].map(line => `<li><span class="josaa-log-dot warn"></span><span class="josaa-log-text">${escapeHTML(line)}</span></li>`).join("");
+    }
+    showToast("Gateway not connected", "The JOSAA button now reports its integration status; live sync requires a real provider API.", "warning");
+});
+
+// The five dashboard scenarios are intentionally local-only demonstrations.
+async function runDemo(number) {
+    const demoBtn = [...document.querySelectorAll(".demo-scenario-btn")]
+        .find(button => button.getAttribute("onclick") === `runDemo(${number})`);
+    if (demoBtn) demoBtn.classList.add("running");
+    const base = {
+        sid: `DEMO-${String(number).padStart(2, "0")}`,
+        inst: "INST001",
+        year: new Date().getFullYear(),
+        tfw: false, ews: false, nri: false, fn: false,
+        sup: false, ghost_flag: false, consent: true
+    };
+    let message = "";
+    try {
+        if (number === 1) {
+            processRecord({ ...base, apaar: "900000000001", name: "Demo Normal Admission", branch: "CSE", course: "B.Tech Computer Science" });
+            message = "Normal admission added to the local demo registry. This is not a backend verification.";
+        } else if (number === 2) {
+            logAudit("DEMO_QUOTA_BLOCK", "A simulated admission above the approved intake was blocked before insertion.");
+            saveDB();
+            message = "Quota-stuffing attempt blocked in the local scenario. No backend request was made.";
+        } else if (number === 3) {
+            processRecord({ ...base, apaar: "900000000003", name: "Demo Ghost Seat", branch: "CSE", course: "B.Tech Computer Science", ghost_flag: true });
+            message = "A local record was tagged with a simulated ML anomaly for Vigilance review.";
+        } else if (number === 4) {
+            processRecord({ ...base, sid: "TEMP-FN-004", apaar: "PROV-FN-NPL-90004", name: "Demo Foreign National", branch: "OTH", course: "Foreign National Temporary Admission", fn: true, sup: true });
+            message = "A provisional foreign-national record was added locally; no passport/FRRO service was contacted.";
+        } else if (number === 5) {
+            let record = db.records.find(item => item.apaar === "900000000001" && item.inst === "INST001");
+            if (!record) {
+                record = { ...base, apaar: "900000000005", name: "Demo Consent Record", branch: "CSE", course: "B.Tech Computer Science" };
+                processRecord(record);
+            }
+            record.consent = false;
+            logAudit("DEMO_CONSENT_REVOKED", `Consent revoked locally for ${record.apaar}. Backend consent was not changed.`);
+            saveDB();
+            message = "Consent revoked in the browser demo only. The backend consent record was not changed.";
+        } else {
+            showToast("Unknown scenario", "Select one of the five available demo scenarios.", "warning");
+            return;
+        }
+        await updateDashboard();
+        updateRecords();
+        updateSeatHint();
+        showToast(`Scenario ${number} complete`, message, "info");
+        if (number === 3) document.querySelector('[data-page="vigilance"]')?.click();
+        else if (number === 1 || number === 4 || number === 5) document.querySelector('[data-page="records"]')?.click();
+    } catch (error) {
+        console.error("Demo scenario failed:", error);
+        showToast("Demo scenario failed", error.message || "Unexpected error", "danger");
+    } finally {
+        window.setTimeout(() => demoBtn?.classList.remove("running"), 500);
+    }
+}
+
+// Student 360 modal is a local mock view; no NAD/DigiLocker API is integrated.
+function openStudent360(apaarId) {
+    const record = db.records.find(item => item.apaar === apaarId);
+    if (!record) {
+        showToast("Record unavailable", "This student is not present in the local registry.", "warning");
+        return;
+    }
+    if (el("modal-360-apaar")) el("modal-360-apaar").textContent = `Local record: ${record.apaar} · ${record.name}`;
+    el("nad-loader")?.classList.remove("hidden");
+    el("digi-loader")?.classList.remove("hidden");
+    el("nad-data")?.classList.add("hidden");
+    el("digi-data")?.classList.add("hidden");
+    el("m-360")?.classList.remove("hidden");
+    window.setTimeout(() => {
+        el("nad-loader")?.classList.add("hidden");
+        el("digi-loader")?.classList.add("hidden");
+        el("nad-data")?.classList.remove("hidden");
+        el("digi-data")?.classList.remove("hidden");
+        const note = el("m-360")?.querySelector(".notice");
+        if (note) note.textContent = "Demo display only. NAD / DigiLocker data shown here is sample content, not a live provider response.";
+    }, 350);
+}
+
+// Exports: PDF uses the browser print dialog; matrix data downloads as CSV,
+// which opens in Excel. No external signed-report service is connected.
+function triggerDownload(button, format, requestedName) {
+    const safeName = String(requestedName || "aicte-report").replace(/[\\/:*?"<>|]/g, "_");
+    const records = sortRecords().filter(inScope);
+    if (format === "excel") {
+        const rows = [["Institution ID", "Institution", "Branch", "Sanctioned Intake", "Local Regular Records", "Local Supernumerary Records"]];
+        INSTITUTIONS.forEach(inst => {
+            BRANCHES.filter(branch => branch.code !== "OTH").forEach(branch => {
+                const same = records.filter(record => record.inst === inst.id && branchOf(record) === branch.code);
+                rows.push([inst.id, inst.name, branch.code, sanctioned(inst.id, branch.code),
+                    same.filter(record => !record.sup).length, same.filter(record => record.sup).length]);
+            });
+        });
+        const csv = "\uFEFF" + rows.map(row => row.map(value => `"${String(value ?? "").replace(/"/g, '""')}`).join(",")).join("\r\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = safeName.replace(/\.xlsx?$/i, "") + ".csv";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast("CSV exported", "Excel-compatible CSV downloaded. This is a local data export, not a digitally signed official report.", "success");
+        return;
+    }
+    if (format === "pdf") {
+        const printWindow = window.open("", "_blank", "width=1000,height=750");
+        if (!printWindow) {
+            showToast("Popup blocked", "Allow popups to open the print-ready report, then choose Save as PDF.", "warning");
+            return;
+        }
+        printWindow.opener = null;
+        const title = safeName.replace(/\\.pdf$/i, "").replace(/[_-]+/g, " ");
+        const bodyRows = records.map(record => `<tr><td>${escapeHTML(record.apaar)}</td><td>${escapeHTML(record.name)}</td><td>${escapeHTML(getInstName(record.inst))}</td><td>${escapeHTML(branchOf(record))}</td><td>${escapeHTML(record.year)}</td></tr>`).join("");
+        printWindow.document.open();
+        printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHTML(title)}</title><style>body{font:12px Arial,sans-serif;color:#172033;padding:28px}h1{font-size:20px}p{color:#586174}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #ccd2dc;padding:7px;text-align:left}th{background:#eef1f7}@media print{button{display:none}}</style></head><body><h1>${escapeHTML(title)}</h1><p>Local browser registry snapshot · generated ${new Date().toLocaleString()} · ${records.length} records</p><p>This is a print-ready demo report. It is not digitally signed or an official AICTE submission.</p><button onclick="window.print()">Print / Save as PDF</button><table><thead><tr><th>APAAR / ID</th><th>Student</th><th>Institution</th><th>Branch</th><th>Year</th></tr></thead><tbody>${bodyRows || '<tr><td colspan="5">No local records available</td></tr>'}</tbody></table></body></html>`);
+        printWindow.document.close();
+        showToast("Print-ready report opened", "Use the print dialog and choose Save as PDF. The report contains local browser data only.", "success");
+        return;
+    }
+    showToast("Unsupported export", "This export format is not supported.", "warning");
+}
+
+function makeChart(canvasId, config) {
+    const canvas = el(canvasId);
+    if (!canvas || typeof window.Chart !== "function") return;
+    if (chartRegistry[canvasId]) chartRegistry[canvasId].destroy();
+    chartRegistry[canvasId] = new window.Chart(canvas.getContext("2d"), config);
+}
+
+function initCharts() {
+    if (typeof window.Chart !== "function") {
+        showToast("Charts unavailable", "Chart.js did not load. Check the CDN connection.", "warning");
+        return;
+    }
+    const currentYear = new Date().getFullYear();
+    const years = Array.from({ length: 5 }, (_, i) => String(currentYear - 4 + i));
+    const yearly = years.map(year => db.records.filter(record => String(record.year) === year).length);
+    const quotaLabels = ["TFW", "EWS", "NRI", "Foreign"];
+    const quotaValues = ["tfw", "ews", "nri", "fn"].map(key => db.records.filter(record => !!record[key]).length);
+    const instLabels = INSTITUTIONS.map(item => item.id);
+    const regular = INSTITUTIONS.map(inst => db.records.filter(record => record.inst === inst.id && !record.sup).length);
+    const supernumerary = INSTITUTIONS.map(inst => db.records.filter(record => record.inst === inst.id && record.sup).length);
+    const common = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } } };
+    makeChart("trendChart", { type: "line", data: { labels: years, datasets: [{ label: "Local records", data: yearly, tension: .25, fill: false }] }, options: common });
+    makeChart("categoryChart", { type: "bar", data: { labels: quotaLabels, datasets: [{ label: "Local records", data: quotaValues }] }, options: common });
+    makeChart("quotaBarChart", { type: "bar", data: { labels: instLabels, datasets: [{ label: "Regular", data: regular }, { label: "Supernumerary", data: supernumerary }] }, options: { ...common, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } } });
+}
+
+function updateAnalyticsData() {
+    // Rebuild from local browser data so Analytics never suggests live national totals.
+    if (!chartRegistry.trendChart && !chartRegistry.categoryChart && !chartRegistry.quotaBarChart) return;
+    initCharts();
+}
+
+function initVigilanceCharts() {
+    if (typeof window.Chart !== "function") return;
+    const scatter = ANOM.map((item, index) => ({ x: index + 1, y: Number(item.score) }));
+    makeChart("anomalyScatterChart", { type: "scatter", data: { datasets: [{ label: "Sample anomaly scores", data: scatter }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 1 } } } });
+    makeChart("temporalBurstChart", { type: "bar", data: { labels: ["08:00", "10:00", "12:00", "14:00", "16:00"], datasets: [{ label: "Sample upload volume", data: [18, 24, 42, 88, 31] }] }, options: { responsive: true, maintainAspectRatio: false } });
+}
+
+function renderFuzzyMatches() {
+    const container = el("fuzzy-match-container");
+    if (!container) return;
+    container.innerHTML = ANOM.slice(0, 2).map(item => `
+        <article class="fuzzy-card">
+            <div class="fuzzy-header"><strong>${escapeHTML(item.id)} · ${escapeHTML(item.det)}</strong><span class="fuzzy-score">${escapeHTML(item.score)}</span></div>
+            <p>${escapeHTML(item.t)}</p>
+            <div class="dob-match">Sample alert · not a live ML result</div>
+        </article>`).join("");
+}
+
 // Initial render after the page markup is ready. Without this, the dashboard
 // can remain at its HTML placeholder values until a navigation click occurs.
 (function initializeApplicationUI() {
@@ -2141,6 +2544,7 @@ document.addEventListener("click", async (e) => {
         try {
             renderBatch();
             renderIngHead();
+            renderReviewQueue();
             updateDashboard();
             updateRecords();
             updateSeatHint();

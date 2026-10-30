@@ -1,0 +1,20 @@
+/* AICTE-PRAMAAN interaction fixes */
+#entry-gate { pointer-events: auto; }
+#entry-gate button, #entry-switch { pointer-events: auto; }
+#btn-2fa-verify, #btn-2fa-cancel { min-height: 42px; }
+#nav-overlay { cursor: pointer; }
+.modal-overlay { pointer-events: auto; }
+button:disabled { cursor: not-allowed; }
+@media (max-width: 560px) {
+  #btn-2fa-verify, #btn-2fa-cancel { flex: 1 1 100%; }
+}
+
+/* Keep sign-in feedback above the 2FA modal. */
+#toast-container { z-index: 10020 !important; }
+
+/* Role-specific navigation visibility. Backend RBAC remains authoritative. */
+body[data-role="institution"] .nav-menu a[data-page="audit"] { display: none !important; }
+body[data-role="audit"] .nav-menu a[data-page="upload"],
+body[data-role="audit"] .nav-menu a[data-page="records"],
+body[data-role="audit"] .nav-menu a[data-page="vigilance"],
+body[data-role="audit"] .nav-menu a[data-page="review"] { display: none !important; }
