@@ -180,3 +180,15 @@
     }
     .analytics-toolbar .depth-btn { width: 100%; }
 }
+/*
+ * AICTE-PRAMAAN — 2FA modal visibility fix
+ * Load this AFTER login-analytics-fixes.css, or append it to that file.
+ *
+ * The responsive #m-2fa.modal-overlay rule forces display:flex !important.
+ * This higher-specificity rule restores the hidden state after login/cancel.
+ */
+
+#m-2fa.modal-overlay.hidden,
+#m-2fa.modal-overlay[aria-hidden="true"] {
+    display: none !important;
+}
