@@ -555,15 +555,36 @@
     <script src="entry.js"></script>
     <!-- Patch: move branch-filter into sidebar wrapper after app.js injects it -->
     <script>
-    (function() {
-        // app.js injects #branch-filter after .role-selector — move it into our wrapper
-        var wrap = document.getElementById('branch-filter-wrap');
-        var sel = document.getElementById('branch-filter');
-        if (wrap && sel && !wrap.contains(sel)) {
-            wrap.appendChild(sel);
-            sel.style.width = '100%';
+(function () {
+    const wrap = document.getElementById('branch-filter-wrap');
+    const select = document.getElementById('branch-filter');
+
+    if (!wrap || !select) return;
+
+    // Keep exactly one Branch / Programme label.
+    let label = wrap.querySelector('label[for="branch-filter"]');
+
+    if (!label) {
+        label = document.createElement('label');
+        label.htmlFor = 'branch-filter';
+        label.textContent = 'Branch / Programme';
+        wrap.prepend(label);
+    }
+
+    // Remove duplicate labels injected elsewhere by app.js.
+    document.querySelectorAll('label[for="branch-filter"]').forEach(function (item) {
+        if (item !== label) {
+            item.remove();
         }
-    })();
-    </script>
+    });
+
+    // Ensure the dropdown is inside the sidebar wrapper.
+    if (!wrap.contains(select)) {
+        wrap.appendChild(select);
+    }
+
+    select.style.width = '100%';
+})();
+</script>
 </body>
 </html>
