@@ -11,7 +11,7 @@ const router = express.Router();
 router.post('/ingest', authenticateToken, requireRole(['INSTITUTION', 'AICTE']), async (req, res) => {
     try {
         const { apaar_id, student_id, name, institution_id, branch, admission_year, is_tfw, has_consent } = req.body;
-        
+
         if (!apaar_id || !student_id || !name || !institution_id || !branch || !admission_year) {
             return res.status(400).json({ error: 'Missing required fields.' });
         }
@@ -41,7 +41,7 @@ router.post('/ingest', authenticateToken, requireRole(['INSTITUTION', 'AICTE']),
             branch,
             admission_year,
             is_tfw: is_tfw || false,
-            has_consent: has_consent !== undefined ? has_consent : true, 
+            has_consent: has_consent !== undefined ? has_consent : true,
             ed25519_signature: signature
         });
         await newRecord.save();
@@ -71,13 +71,28 @@ router.get('/generate-qr/:apaar_id', async (req, res) => {
         if (!record.has_consent) return res.status(403).json({ error: "Student revoked DPDP consent for verification." });
 
         const canonicalData = `${record.apaar_hmac}|${record.student_id}|${record.institution_id}|${record.branch}|${record.admission_year}`;
-        
+
         const leafHash = hashLeaf(canonicalData);
         const leafIndex = globalMerkleTree.leaves.findIndex(leaf => leaf.equals(leafHash));
 
         if (leafIndex === -1) {
             return res.status(500).json({ error: "Tree out of sync. Restart server and ingest fresh." });
         }
+
+
+
+
+
+        // Calculate the CURRENT Merkle root for the restored tree.
+        const merkleRoot = globalMerkleTree.getRoot();
+
+        // Sign the current root using the persistent Ed25519 key.
+        const merkleRootSignature = signData({
+            merkle_root: merkleRoot
+        });
+
+        // Generate the inclusion proof from the same current tree.
+        const proof = globalMerkleTree.getProof(leafIndex);
 
         const payload = {
             version: "1.0",
@@ -91,11 +106,14 @@ router.get('/generate-qr/:apaar_id', async (req, res) => {
                 admission_year: record.admission_year
             },
             signature: record.ed25519_signature,
-            merkle_root: globalMerkleTree.getRoot(),
-            proof: globalMerkleTree.getProof(leafIndex)
+            merkle_root: merkleRoot,
+            merkle_root_signature: merkleRootSignature,
+            record_count: globalMerkleTree.leaves.length,
+            proof: proof
         };
 
-        res.json(payload);
+        return res.json(payload);
+
     } catch (error) {
         res.status(500).json({ error: error.message, stack: error.stack });
     }
