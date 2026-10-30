@@ -1,4 +1,6 @@
 const API_BASE = "https://aicte-pramaan-api.onrender.com";
+const TRUSTED_ED25519_PUBLIC_KEY =
+    "b4d6a4f061910c638906414e99cc6a8e0dae3e947ccb9557165c35dd08a8ba63";
 let jwtToken = ""; // Stores the backend JWT session token
 
 // ----------------------------------------------------------------------
@@ -565,7 +567,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
     try {
         // Map the UI role to the backend credentials
         let username = pendingRole === 'institution' ? 'INST001' : 'AICTE_ADMIN';
-        let password = pendingRole === 'institution' ? 'inst_password_2026' : 'admin_password_2026';
+        let password = pendingRole === 'institution' ? 'password123' : 'admin123';
         let totp_code = "123456"; // Simulating valid TOTP app input
 
         const response = await fetch(`${API_BASE}/api/auth/login`, {
@@ -879,19 +881,43 @@ function updateVigilance() {
 }
 
 document.addEventListener("click", e => {
+    // Print verification certificate
+    const printButton = e.target.closest(".certificate-print-btn");
+
+    if (printButton) {
+        e.preventDefault();
+        window.print();
+        return;
+    }
+
+    // Existing audit hash copy functionality
     const h = e.target.closest(".hash");
-    if (h && h.dataset.full && navigator.clipboard) navigator.clipboard.writeText(h.dataset.full).catch(() => {});
+
+    if (h && h.dataset.full && navigator.clipboard) {
+        navigator.clipboard.writeText(h.dataset.full).catch(() => {});
+    }
 });
 el("f-inst").addEventListener("change", renderIngHead);
 el("f-year").addEventListener("input", renderIngHead);
 
 // 📱 REAL QR Code Generator (Connects to actual verification endpoint)
 function qrSVG(seedHex, size) {
-    const uuid = `${seedHex.slice(0, 8)}-${seedHex.slice(8, 12)}-4${seedHex.slice(13, 16)}-a${seedHex.slice(17, 20)}-${seedHex.slice(20, 32)}`;
-    // The QR code now points to a real URL format that a judge's smartphone can scan!
-    const verifyUrl = encodeURIComponent(`https://verify.aicte.gov.in/credential/${uuid}`);
-    
-    return `<img src="https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${verifyUrl}" alt="Scan to Verify" style="border:1px solid #b5a572; padding:4px; background:#fff; width:${size}px; height:${size}px;">`;
+    const verifyUrl = encodeURIComponent(
+        `${window.location.origin}${window.location.pathname}`
+    );
+
+    return `
+        <img
+            src="https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${verifyUrl}"
+            alt="Open verification portal"
+            style="
+                border:1px solid #b5a572;
+                padding:4px;
+                background:#fff;
+                width:${size}px;
+                height:${size}px;
+            ">
+    `;
 }
 
 // 📱 Simulated Multi-Device Notifications (SMS/Email)
@@ -914,102 +940,486 @@ function showToast(title, msg, type = "info") {
     }, 5500); // Dissolve after 5.5 seconds
 }
 
+// Certificate print styling
+(function installCertificatePrintStyles() {
+    if (document.getElementById("aicte-certificate-print-styles")) return;
+
+    const style = document.createElement("style");
+
+    style.id = "aicte-certificate-print-styles";
+
+    style.textContent = `
+        @page {
+            size: A4;
+            margin: 12mm;
+        }
+
+        .certificate-print-btn {
+            white-space: nowrap;
+        }
+
+        @media print {
+            html, body {
+                background: #fff !important;
+            }
+
+            body * {
+                visibility: hidden !important;
+            }
+
+            #v-out, #v-out * {
+                visibility: visible !important;
+            }
+
+            #v-out {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #fff !important;
+            }
+
+            #v-out .certificate-print-btn {
+                display: none !important;
+            }
+
+            #v-out .cols {
+                display: grid !important;
+                grid-template-columns: 1fr !important;
+                gap: 8mm !important;
+            }
+
+            #v-out .depth-card,
+            #v-out .paper {
+                box-shadow: none !important;
+            }
+
+            #v-out .depth-card {
+                margin-bottom: 8mm !important;
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            #v-out .paper {
+                max-width: none !important;
+            }
+
+            #v-out .mono {
+                overflow-wrap: anywhere !important;
+            }
+
+            #v-out .tag {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+        }
+    `;
+
+    document.head.appendChild(style);
+})();
+
+
 function buildCertificate(record, c) {
     const inst = INSTITUTIONS.find(i => i.id === record.inst);
     const instName = inst ? inst.name : record.inst;
+
     const br = BRANCH_MAP[branchOf(record)];
     const y = Number(record.year);
-    const batch = y ? `${y}-${String(y + 1).slice(-2)}` : "n/a";
-    const seat = record.nri ? "NRI_QUOTA" : record.tfw ? "TFW_SUPERNUMERARY" : record.fn ? "FN_SUPERNUMERARY" : record.ews ? "EWS" : "CORE_MERIT";
-    const h = c.leafHash;
-    const uuid = `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
-    const apaarShown = /^\d{12}$/.test(record.apaar) ? record.apaar.replace(/(\d{4})(?=\d)/g, "$1-") : record.apaar;
-    const did = `did:web:${(inst ? inst.id : "institute").toLowerCase()}.aicte.gov.in`;
-    const roleSel = el("role");
-    const roleLabel = roleSel.options[roleSel.selectedIndex].text;
-    const ref = `VRF-${new Date().toISOString().slice(0, 10)}-${String(db.audit[0] ? db.audit[0].block : 1).padStart(7, "0")}`;
+    const batch = y
+        ? `${y}-${String(y + 1).slice(-2)}`
+        : "n/a";
 
-    buildCaches();
-    const flags = analyzeFlags(record);
+    const seat = record.nri
+        ? "NRI_QUOTA"
+        : record.tfw
+            ? "TFW_SUPERNUMERARY"
+            : record.fn
+                ? "FN_SUPERNUMERARY"
+                : record.ews
+                    ? "EWS"
+                    : "CORE_MERIT";
+
+    const h = c.leafHash;
+
+    const apaarShown = /^\d{12}$/.test(record.apaar)
+        ? record.apaar.replace(/(\d{4})(?=\d)/g, "$1-")
+        : record.apaar;
+
+    const roleSel = el("role");
+    const roleLabel =
+        roleSel.options[roleSel.selectedIndex].text;
+
+    const ref = `VRF-${new Date().toISOString().slice(0, 10)}-${String(
+        db.audit[0] ? db.audit[0].block : 1
+    ).padStart(7, "0")}`;
+
     const checks = [
-        [c.isValid, "Cryptographic Signature Valid"],
-        [!flags.some(f => f.includes("Exceeds") || f.includes("Conflict")), `AICTE Sanctioned Seat Verified (${br.short}, AY ${batch})`],
-        [!flags.some(f => f.includes("Dual")), "No Cross-Institute Dual Enrolment"],
-        [!record.ghost_flag, "No ML Anomaly Flag"]
+        [c.keyMatches === true, "Trusted public key matches"],
+        [c.signatureValid === true, "Record signature verified"],
+        [c.rootSignatureValid === true, "Merkle root signature verified"],
+        [c.proofValid === true, "Merkle inclusion proof verified"]
     ];
-    const allOk = checks.every(x => x[0]);
-    const result = allOk ? pill("Verified", "ok") : (c.isValid ? pill("Review required", "wn") : pill("Tampered", "er"));
+
+    const allOk = checks.every(check => check[0]);
+
+    const result = allOk
+        ? pill("CRYPTOGRAPHICALLY VERIFIED", "ok")
+        : pill("VERIFICATION FAILED", "er");
 
     const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
-    const hidden = c.isEmployer ? pill("Masked", "pu") : pill("Visible to your role", "in");
 
-    return `<div class="cols">
-    <section class="depth-card flush">
-        <div class="card-head"><h3>Dual-ID Seat-Pass Certificate</h3><span class="muted">W3C Verifiable Credential preview</span></div>
-        <div class="paper">
-            <div class="row">
-                <div><small>AICTE Approved Institute · Government of India</small><h3>${escapeHTML(instName)}</h3><small>Institute ID ${escapeHTML(record.inst)}</small></div>
-                <div class="ids"><div><b>Enrolment No.:</b> ${escapeHTML(record.sid || "n/a")}</div><div><b>National APAAR ID:</b> ${escapeHTML(apaarShown)}</div></div>
-            </div>
-            <div class="mid"><small>This is to certify that</small><br><span class="nm">${escapeHTML(record.name)}</span>
-                <div style="line-height:1.7;margin-top:6px">is enrolled against a sanctioned seat in the programme<br><b style="font-size:17px">${escapeHTML(record.course)}</b><br><span style="font-size:12px">Branch: ${escapeHTML(br.name)} · Admission batch AY ${batch}${c.isEmployer ? "" : " · Seat category " + seat}</span></div></div>
-            <div class="ft">
-                <div>Credential ID: urn:uuid:${uuid}<br>Issuer: ${escapeHTML(did)}<br>Proof: DataIntegrityProof / eddsa-2022 (simulated)<br>Ed25519 Signature: sig_ed25519_${h.slice(0, 16)}...
-                    <div class="sg"><span>Controller of Examinations</span><span>Director / Principal</span></div></div>
-                <div style="text-align:center">${qrSVG(h, 104)}<div style="font-size:9px">SCAN TO VERIFY</div></div>
-            </div>
-        </div>
-    </section>
-    <section class="depth-card flush">
-        <div class="card-head"><h3>Authorized Stakeholder Verification Gateway</h3><span class="muted">DPDP Act 2023 compliant</span></div>
-        <dl class="kv">
-            ${row("Verifier", escapeHTML(roleLabel))}
-            ${row("Scan reference", ref)}
-            ${row("Subject APAAR", escapeHTML(apaarShown))}
-            ${row("Consent token", `CT-${c.rootHash.slice(0, 4)}...${h.slice(-4)} · expires in 24h`)}
-            ${row("Result", result)}
-        </dl>
-        <ul class="checks sep">${checks.map(x => `<li class="${x[0] ? "pass" : "fail"}">${x[0] ? ICON.check : ICON.cross}${escapeHTML(x[1])}</li>`).join("")}</ul>
-        
-        <!-- 🔐 NEW: Ed25519 Digital Signature & Key Rotation Mockup -->
-        <div class="sep" style="padding: 16px; background: #fafafa;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <b style="font-size:13px; color:#1e293b;">Cryptographic Signature Info</b>
-                ${c.isValid ? pill("Ed25519 Match", "ok") : pill("Signature Invalid", "er")}
-            </div>
-            <div class="mono" style="font-size:11px; color:var(--text-light); word-break:break-all; line-height:1.6;">
-                <b>Public Key (EdDSA):</b> 3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29<br>
-                <b>Signature Hash:</b> sig_ed25519_${h.slice(0, 32)}...<br>
-                <b>Algorithm:</b> EdDSA (RFC 8032) / Curve25519
-            </div>
-            <div style="font-size:11px; margin-top:12px; border-top:1px dashed #cbd5e1; padding-top:10px; color:#475569;">
-                <b>Key Rotation Policy:</b> Keys rotated dynamically every 90 days via KMS. Current active epoch: 2026-Q4. <a href="#" style="color:var(--primary); text-decoration:none;">View AICTE Policy DOC-992</a>
-            </div>
-        </div>
-        <!-- End of Cryptographic Mockup -->
+    const hidden = c.isEmployer
+        ? pill("Masked", "pu")
+        : pill("Visible to your role", "in");
 
-        <div class="sep"><div class="notice">${ICON.shield}<div><b>${c.isEmployer ? "DPDP Act 2023 Selective Disclosure Active" : "Full view for an authorised role"}</b>
-        <div class="sep"><div class="notice">${ICON.shield}<div><b>${c.isEmployer ? "DPDP Act 2023 Selective Disclosure Active" : "Full view for an authorised role"}</b>${c.isEmployer
-            ? "Protected attributes (Caste Category, TFW Parental Income, Aadhaar Vault Token) are cryptographically masked from Employer view."
-            : "Employers verifying this record see the protected attributes below masked."}</div></div></div>
-        <dl class="kv sep">
-            ${row("Name, programme, institute", pill("Disclosed", "ok"))}
-            ${row("Branch / discipline", pill(br.code, "ok"))}
-            ${row(`Seat validity (AY ${batch})`, pill("Disclosed", "ok"))}
-            ${row("Seat category / quota", hidden)}
-            ${row("Caste Category", hidden)}
-            ${row("TFW Parental Income", hidden)}
-            ${row("Aadhaar Vault Token", hidden)}
-        </dl>
-        <dl class="kv sep">
-            ${row("Merkle root", c.rootHash)}
-            ${row("Leaf hash", h)}
-            ${row("Proof path", `${c.proofLen} sibling nodes · ${c.total.toLocaleString()} leaves`)}
-            ${row("Inclusion proof", c.isValid ? pill("VALID", "ok") : pill("TAMPERED", "er"))}
-        </dl>
-    </section>
+    return `
+    <div class="cols">
+
+        <section class="depth-card flush">
+
+            <div class="card-head">
+                <h3>Dual-ID Seat-Pass Certificate</h3>
+
+                <button
+                    type="button"
+                    class="btn btn-primary depth-btn certificate-print-btn">
+                    Print / Save PDF
+                </button>
+            </div>
+
+            <div class="paper">
+
+                <div class="row">
+                    <div>
+                        <small>Institution record</small>
+                        <h3>${escapeHTML(instName)}</h3>
+                        <small>Institute ID ${escapeHTML(record.inst)}</small>
+                    </div>
+
+                    <div class="ids">
+                        <div>
+                            <b>Enrolment No.:</b>
+                            ${escapeHTML(record.sid || "n/a")}
+                        </div>
+
+                        <div>
+                            <b>National APAAR ID:</b>
+                            ${escapeHTML(apaarShown)}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mid">
+                    <small>This is to certify that</small>
+                    <br>
+
+                    <span class="nm">
+                        ${escapeHTML(record.name)}
+                    </span>
+
+                    <div style="line-height:1.7;margin-top:6px">
+                        is enrolled against a sanctioned seat in the programme
+                        <br>
+
+                        <b style="font-size:17px">
+                            ${escapeHTML(record.course)}
+                        </b>
+
+                        <br>
+
+                        <span style="font-size:12px">
+                            Branch: ${escapeHTML(br.name)}
+                            · Admission batch AY ${batch}
+                            ${c.isEmployer ? "" : " · Seat category " + seat}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="ft">
+                    <div>
+                        Verification reference: ${escapeHTML(ref)}
+                        <br>
+                        Platform: AICTE Pramaan SIH prototype
+                        <br>
+                        Proof: Ed25519 + SHA-256 Merkle inclusion proof
+                        <br>
+                        Record signature:
+                        ${escapeHTML(String(c.signature || "").slice(0, 24))}...
+                    </div>
+
+                    <div style="text-align:center">
+                        ${qrSVG(h, 104)}
+                        <div style="font-size:9px">
+                            OPEN VERIFICATION PORTAL
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <section class="depth-card flush">
+
+            <div class="card-head">
+                <h3>Authorized Stakeholder Verification Gateway</h3>
+                <span class="muted">Consent-aware access</span>
+            </div>
+
+            <dl class="kv">
+                ${row("Verifier", escapeHTML(roleLabel))}
+                ${row("Scan reference", escapeHTML(ref))}
+                ${row("Subject APAAR", escapeHTML(apaarShown))}
+                ${row("Consent status", pill("Granted", "ok"))}
+                ${row("Result", result)}
+            </dl>
+
+            <ul class="checks sep">
+                ${checks.map(check => `
+                    <li class="${check[0] ? "pass" : "fail"}">
+                        ${check[0] ? ICON.check : ICON.cross}
+                        ${escapeHTML(check[1])}
+                    </li>
+                `).join("")}
+            </ul>
+
+            <div class="sep" style="padding:16px;background:#fafafa">
+
+                <b style="font-size:13px;color:#1e293b">
+                    Cryptographic Signature Info
+                </b>
+
+                <div class="mono"
+                    style="font-size:11px;color:var(--text-light);
+                    word-break:break-all;line-height:1.6">
+
+                    <b>Public Key:</b>
+                    ${escapeHTML(c.publicKey || "")}
+
+                    <br>
+
+                    <b>Record Signature:</b>
+                    ${escapeHTML(c.signature || "")}
+
+                    <br>
+
+                    <b>Merkle Root Signature:</b>
+                    ${escapeHTML(c.rootSignature || "")}
+
+                    <br>
+
+                    <b>Algorithm:</b>
+                    Ed25519 / SHA-256
+
+                </div>
+            </div>
+
+            <div class="sep">
+                <div class="notice">
+                    ${ICON.shield}
+                    <div>
+                        <b>
+                            ${c.isEmployer
+                                ? "Consent-aware selective disclosure"
+                                : "Full view for an authorised role"}
+                        </b>
+                    </div>
+                </div>
+            </div>
+
+            <dl class="kv sep">
+                ${row("Name, programme, institute", pill("Disclosed", "ok"))}
+                ${row("Branch / discipline", pill(br.code, "ok"))}
+                ${row(`Seat validity (AY ${batch})`, pill("Disclosed", "ok"))}
+                ${row("Seat category / quota", hidden)}
+                ${row("Caste Category", hidden)}
+                ${row("TFW Parental Income", hidden)}
+                ${row("Aadhaar Vault Token", hidden)}
+            </dl>
+
+            <dl class="kv sep">
+                ${row("Merkle root", escapeHTML(c.rootHash || ""))}
+                ${row("Leaf hash", escapeHTML(h || ""))}
+
+                ${row(
+                    "Proof path",
+                    `${c.proofLen} sibling nodes · ${Number(c.total || 0).toLocaleString()} leaves`
+                )}
+
+                ${row(
+                    "Inclusion proof",
+                    c.proofValid
+                        ? pill("VALID", "ok")
+                        : pill("INVALID", "er")
+                )}
+
+                ${row(
+                    "Root signature",
+                    c.rootSignatureValid
+                        ? pill("VALID", "ok")
+                        : pill("INVALID", "er")
+                )}
+            </dl>
+
+        </section>
     </div>`;
 }
+
+
+
+function hexToBytes(hex) {
+    if (
+        typeof hex !== "string" ||
+        hex.length % 2 !== 0 ||
+        !/^[0-9a-f]+$/i.test(hex)
+    ) {
+        throw new Error("Invalid hexadecimal value");
+    }
+
+    return Uint8Array.from(
+        hex.match(/.{2}/g).map(x => parseInt(x, 16))
+    );
+}
+
+function concatBytes(...parts) {
+    const result = new Uint8Array(
+        parts.reduce((n, p) => n + p.length, 0)
+    );
+
+    let offset = 0;
+
+    for (const part of parts) {
+        result.set(part, offset);
+        offset += part.length;
+    }
+
+    return result;
+}
+
+function toHex(bytes) {
+    return Array.from(
+        bytes,
+        b => b.toString(16).padStart(2, "0")
+    ).join("");
+}
+
+async function sha256(bytes) {
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return new Uint8Array(digest);
+}
+
+async function verifyLedgerPayload(payload) {
+    if (!window.nacl) {
+        throw new Error("Ed25519 library failed to load");
+    }
+
+    if (!payload.data || !Array.isArray(payload.proof)) {
+        throw new Error("Incomplete verification payload");
+    }
+
+    const encoder = new TextEncoder();
+    const d = payload.data;
+
+    const publicKey = hexToBytes(TRUSTED_ED25519_PUBLIC_KEY);
+
+    const keyMatches =
+        payload.public_key.toLowerCase() ===
+        TRUSTED_ED25519_PUBLIC_KEY.toLowerCase();
+
+    // Verify record signature.
+    // Property order must match the backend's signData() function.
+    const recordData = {
+        student_id: d.student_id,
+        name: d.name,
+        institution_id: d.institution_id,
+        branch: d.branch,
+        admission_year: d.admission_year
+    };
+
+    const recordSignatureValid =
+        keyMatches &&
+        nacl.sign.detached.verify(
+            encoder.encode(JSON.stringify(recordData)),
+            hexToBytes(payload.signature),
+            publicKey
+        );
+
+    // Verify signature of the Merkle root.
+    const rootData = {
+        merkle_root: payload.merkle_root
+    };
+
+    const rootSignatureValid =
+        keyMatches &&
+        nacl.sign.detached.verify(
+            encoder.encode(JSON.stringify(rootData)),
+            hexToBytes(payload.merkle_root_signature),
+            publicKey
+        );
+
+    // Recreate the exact leaf used by the backend.
+    const canonicalData =
+        `${payload.apaar_hmac}|${d.student_id}|` +
+        `${d.institution_id}|${d.branch}|${d.admission_year}`;
+
+    let currentHash = await sha256(
+        concatBytes(
+            new Uint8Array([0x00]),
+            encoder.encode(canonicalData)
+        )
+    );
+
+    const leafHash = toHex(currentHash);
+
+    // Verify each Merkle sibling.
+    for (const item of payload.proof) {
+        if (
+            !item ||
+            !["left", "right"].includes(item.position)
+        ) {
+            throw new Error("Invalid Merkle proof");
+        }
+
+        const sibling = hexToBytes(item.sibling);
+
+        if (sibling.length !== 32) {
+            throw new Error("Invalid Merkle sibling hash");
+        }
+
+        const left =
+            item.position === "left" ? sibling : currentHash;
+
+        const right =
+            item.position === "right" ? sibling : currentHash;
+
+        currentHash = await sha256(
+            concatBytes(
+                new Uint8Array([0x01]),
+                left,
+                right
+            )
+        );
+    }
+
+    const proofValid =
+        toHex(currentHash).toLowerCase() ===
+        payload.merkle_root.toLowerCase();
+
+    return {
+        keyMatches,
+        recordSignatureValid,
+        rootSignatureValid,
+        proofValid,
+        leafHash,
+        valid:
+            keyMatches &&
+            recordSignatureValid &&
+            rootSignatureValid &&
+            proofValid
+    };
+}
+
 
 el("v-btn").addEventListener("click", async () => {
     const rawId = el("v-id").value.trim().replace(/[\s-]/g, "");
@@ -1021,51 +1431,75 @@ el("v-btn").addEventListener("click", async () => {
     out.innerHTML = `<div class="loader-line"></div>`;
 
     try {
-        // Fetch offline QR payload from backend
-        const response = await fetch(`${API_BASE}/api/records/generate-qr/${rawId}`);
-        
-        // 1. Handle DPDP Consent Revocation
+        const response = await fetch(
+            `${API_BASE}/api/records/generate-qr/${encodeURIComponent(rawId)}`
+        );
+
         if (response.status === 403) {
-            out.innerHTML = `<div class="depth-card">
-                <h4 class="text-danger">Access Denied (DPDP Act 2023)</h4>
-                <p class="helper-text mt-16">The student associated with this ID has explicitly revoked consent for third-party verification.</p>
-            </div>`;
+            out.innerHTML = `
+                <div class="depth-card">
+                    <h4 class="text-danger">Access Denied</h4>
+                    <p>Student consent has been revoked.</p>
+                </div>`;
             return;
         }
 
-        // 2. Handle Not Found
         if (response.status === 404) {
-            out.innerHTML = `<div class="depth-card"><p class="text-danger">Record not found in the cryptographic ledger.</p></div>`;
+            out.innerHTML = `
+                <div class="depth-card">
+                    <p class="text-danger">
+                        Record not found in the cryptographic ledger.
+                    </p>
+                </div>`;
             return;
         }
 
         const payload = await response.json();
-        
-        // 3. Re-render the UI Certificate using data directly from MongoDB/Merkle Tree
-        const mockRecord = {
+
+        if (!response.ok) {
+            throw new Error(payload.error || "Backend verification failed");
+        }
+
+        const result = await verifyLedgerPayload(payload);
+
+        const record = {
             inst: payload.data.institution_id,
             sid: payload.data.student_id,
             apaar: rawId,
             name: payload.data.name,
-            course: "Verified Programme",
+            course: courseFor(payload.data.branch) || payload.data.branch,
             year: payload.data.admission_year,
-            branch: payload.data.branch
+            branch: payload.data.branch,
+            ghost_flag: false
         };
 
-        out.innerHTML = buildCertificate(mockRecord, {
-            isValid: true, // In a true offline app, the nacl verification happens here
+        out.innerHTML = buildCertificate(record, {
+            isValid: result.valid,
+            keyMatches: result.keyMatches,
+            signatureValid: result.recordSignatureValid,
+            rootSignatureValid: result.rootSignatureValid,
+            proofValid: result.proofValid,
+            publicKey: payload.public_key,
+            signature: payload.signature,
+            rootSignature: payload.merkle_root_signature,
             rootHash: payload.merkle_root,
-            leafHash: payload.apaar_hmac,
+            leafHash: result.leafHash,
             proofLen: payload.proof.length,
-            total: 9999, // Dynamic total omitted for brevity
+            total: payload.record_count,
             isEmployer: role === "employer"
         });
 
-    } catch (err) {
-        console.error(err);
-        out.innerHTML = `<div class="depth-card"><p class="text-danger">Network Error verifying cryptographic payload.</p></div>`;
+    } catch (error) {
+        console.error("Cryptographic verification error:", error);
+
+        out.innerHTML = `
+            <div class="depth-card">
+                <h4 class="text-danger">Verification Failed</h4>
+                <p>${escapeHTML(error.message)}</p>
+            </div>`;
     }
 });
+
 
 // Docker Engine Event Listener
 const API_BASE_URL = "https://aicte-pramaan-data-engine.onrender.com";
