@@ -1882,56 +1882,44 @@ if (qrReference) {
 // Docker Engine Event Listener
 const API_BASE_URL = "https://aicte-pramaan-data-engine.onrender.com";
 
-el("docker-btn").addEventListener("click", async () => {
-    const btn = el("docker-btn");
-    const msg = el("docker-msg");
+document.addEventListener("click", async (e) => {
+    const btn = e.target.closest("#docker-btn");
+    if (!btn) return;
 
-    if (!jwtToken) {
-        msg.innerHTML = `<span class="tag tag-danger">Log in as AICTE Admin first (role dropdown).</span>`;
-        return;
-    }
+    const msg = document.getElementById("docker-msg");
+    if (!msg) return;
 
+    btn.innerHTML = "Processing...";
     btn.disabled = true;
-    btn.innerText = "Waking data engine...";
-    msg.innerHTML = `<span class="tag tag-info">Contacting data engine — may take 30–60s on first run…</span>`;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90000);
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/synthesize/300`, {
-            signal: controller.signal
+        msg.innerHTML = `<span class="tag tag-info">Synthesizing 300 records via Polars...</span>`;
+
+        // 1. Fetch from Docker Data Engine
+        const engineRes = await fetch(`${API_BASE_URL}/stream-records?count=300`);
+        const data = await engineRes.json();
+        
+        if (!engineRes.ok) throw new Error(data.error || "Failed to generate records");
+
+        const engineRecords = data.records.map(r => {
+            const branchCode = guessBranch(r.course || "");
+            return {
+                apaar_id:       r.apaar  || "",
+                student_id:     r.sid    || "",
+                name:           r.name   || "",
+                institution_id: r.inst   || "",
+                branch:         branchCode,
+                admission_year: Number(r.year) || 2026,
+                is_tfw:         !!r.tfw,
+                is_ews:         !!r.ews,
+                is_nri:         !!r.nri,
+                is_fn:          !!r.fn,
+                has_consent:    r.consent !== false
+            };
         });
-        clearTimeout(timeout);
 
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || `Data engine error ${response.status}`);
-        }
-
-        const data = await response.json();
-        if (data.status !== "success") {
-            throw new Error(data.message || "The API did not return a success response.");
-        }
-
-        // ── KEY FIX: data engine returns apaar_id/student_id format,
-        //    not the local apaar/sid format. Normalise before bulk-ingest.
-        const engineRecords = data.records.map(r => ({
-        apaar_id:       r.apaar_id  || r.apaar   || "",
-        student_id:     r.student_id || r.sid    || "",
-        name:           r.name                   || "",
-        institution_id: r.institution_id || r.inst || "",
-        branch:         BRANCH_MAP[r.branch] ? r.branch : guessBranch(r.course || r.branch || ""),
-        admission_year: Number(r.admission_year || r.year || 2026),
-        is_tfw:         !!(r.is_tfw  || r.tfw),
-        is_ews:         !!(r.is_ews  || r.ews),
-        is_nri:         !!(r.is_nri  || r.nri),
-        is_fn:          !!(r.is_fn   || r.fn),
-        has_consent:    r.has_consent !== false && r.consent !== false
-    }));
-            // Save to backend ledger first
+        // 2. Save to backend ledger
         btn.innerText = "Saving to ledger...";
-
         const CHUNK = 1000;
         const totals = { inserted: 0, already_present: 0, invalid: 0 };
 
@@ -1951,13 +1939,12 @@ el("docker-btn").addEventListener("click", async () => {
             const resData = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(resData.error || `Backend error ${res.status}`);
 
-            totals.inserted       += resData.inserted       || 0;
+            totals.inserted        += resData.inserted        || 0;
             totals.already_present += resData.already_present || 0;
             totals.invalid         += resData.invalid         || 0;
         }
 
-        // Mirror records locally so the Registry table shows them.
-        // Convert back to the local apaar/sid shape for localStorage.
+        // 3. Mirror records locally
         db.records = engineRecords.map(r => ({
             apaar:  r.apaar_id,
             sid:    r.student_id,
@@ -1974,6 +1961,7 @@ el("docker-btn").addEventListener("click", async () => {
             ghost_flag: false,
             consent: r.has_consent
         }));
+        
         db.merkleRoot = data.merkle_root || "";
         saveDB();
 
@@ -1990,17 +1978,20 @@ el("docker-btn").addEventListener("click", async () => {
             `</span>`;
 
         document.querySelector('[data-page="dash"]').click();
+        
         setTimeout(() => {
-            el("s-root").innerText = db.merkleRoot
-                ? db.merkleRoot.substring(0, 16) + "..."
-                : "Computed via Backend";
+            const rootEl = document.getElementById("s-root");
+            if(rootEl) {
+                rootEl.innerText = db.merkleRoot
+                    ? db.merkleRoot.substring(0, 16) + "..."
+                    : "Computed via Backend";
+            }
         }, 500);
 
         await updateDashboard();
         updateRecords();
 
     } catch (error) {
-        clearTimeout(timeout);
         console.error("Stream/sync failed:", error);
         const userMsg = error.name === 'AbortError'
             ? "Timed out — data engine is cold-starting. Wait 60s and retry."
@@ -2011,13 +2002,6 @@ el("docker-btn").addEventListener("click", async () => {
         btn.disabled = false;
     }
 });
-
-// ── Wake both Render services on page load so they're warm by the time
-//    the user clicks login or stream.
-(function pingBackend() {
-    fetch(`${API_BASE}/health`,  { method: 'GET' }).catch(() => {});
-    fetch(`${API_BASE_URL}/`,    { method: 'GET' }).catch(() => {});
-})();
 
 // ======================================================================
 // 🎯 Analytics & BI Engine (Charts & Export Simulation)
