@@ -172,8 +172,10 @@ const el = id => document.getElementById(id);
 const escapeHTML = str => String(str).replace(/[&<>'"]/g, 
     tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag])
 );
-const getInstName = id => (INSTITUTIONS.find(i => i.id === id) || { name: id }).name;
-const sortRecords = () => [...db.records].sort((a, b) => a.apaar.localeCompare(b.apaar));
+const COLOR = { ok: "success", er: "danger", wn: "warning", in: "primary", pu: "purple" };
+const KIND  = { ok: "tag-success", er: "tag-danger", wn: "tag-warning", in: "tag-info", pu: "tag-purple" };
+const pill  = (text, kind) => `<span class="tag ${KIND[kind] || ""}">${escapeHTML(text)}</span>`;
+const getInstName = id => (INSTITUTIONS.find(i => i.id === id) || { name: id }).name;const sortRecords = () => [...db.records].sort((a, b) => a.apaar.localeCompare(b.apaar));
 
 function branchOptions(withAll) {
     let h = withAll ? '<option value="ALL">All Branches</option>' : "";
@@ -595,6 +597,7 @@ function syncCourseFromBranch() {
 }
 
 function updateSeatHint() {
+     if (!el("f-inst") || !el("f-branch") || !el("seat-hint")) return;
     buildCaches();
     const inst = el("f-inst").value, code = el("f-branch").value;
     const cap = sanctioned(inst, code);
@@ -1030,10 +1033,6 @@ el("reset-btn").addEventListener("click", () => {
 el("search").addEventListener("input", () => { recPage = 0; updateRecords(); });
 el("rec-prev").addEventListener("click", () => { recPage--; updateRecords(); });
 el("rec-next").addEventListener("click", () => { recPage++; updateRecords(); });
-
-const COLOR = { ok: "success", er: "danger", wn: "warning", in: "primary", pu: "purple" };
-const KIND = { ok: "tag-success", er: "tag-danger", wn: "tag-warning", in: "tag-info", pu: "tag-purple" };
-const pill = (text, kind) => `<span class="tag ${KIND[kind] || ""}">${escapeHTML(text)}</span>`;
 
 const ICON = {
     check: '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>',
@@ -1918,20 +1917,19 @@ el("docker-btn").addEventListener("click", async () => {
         // ── KEY FIX: data engine returns apaar_id/student_id format,
         //    not the local apaar/sid format. Normalise before bulk-ingest.
         const engineRecords = data.records.map(r => ({
-            apaar_id:       r.apaar_id  || r.apaar,
-            student_id:     r.student_id || r.sid,
-            name:           r.name,
-            institution_id: r.institution_id || r.inst,
-            branch:         BRANCH_MAP[r.branch] ? r.branch : guessBranch(r.course || r.branch || ""),
-            admission_year: Number(r.admission_year || r.year),
-            is_tfw:         !!(r.is_tfw  || r.tfw),
-            is_ews:         !!(r.is_ews  || r.ews),
-            is_nri:         !!(r.is_nri  || r.nri),
-            is_fn:          !!(r.is_fn   || r.fn),
-            has_consent:    r.has_consent !== false && r.consent !== false
-        }));
-
-        // Save to backend ledger first
+        apaar_id:       r.apaar_id  || r.apaar   || "",
+        student_id:     r.student_id || r.sid    || "",
+        name:           r.name                   || "",
+        institution_id: r.institution_id || r.inst || "",
+        branch:         BRANCH_MAP[r.branch] ? r.branch : guessBranch(r.course || r.branch || ""),
+        admission_year: Number(r.admission_year || r.year || 2026),
+        is_tfw:         !!(r.is_tfw  || r.tfw),
+        is_ews:         !!(r.is_ews  || r.ews),
+        is_nri:         !!(r.is_nri  || r.nri),
+        is_fn:          !!(r.is_fn   || r.fn),
+        has_consent:    r.has_consent !== false && r.consent !== false
+    }));
+            // Save to backend ledger first
         btn.innerText = "Saving to ledger...";
 
         const CHUNK = 1000;
@@ -2448,8 +2446,8 @@ function handleReview(decision) {
     renderReviewQueue();
 }
 
-el("btn-approve-appeal").addEventListener("click", () => handleReview("Approved"));
-el("btn-reject-appeal").addEventListener("click", () => handleReview("Rejected"));
+el("btn-approve-appeal")?.addEventListener("click", () => handleReview("Approved"));
+el("btn-reject-appeal")?.addEventListener("click", () => handleReview("Rejected"));
 
 // Ensure the page renders when clicked (Update your `renderPage` function slightly)
 const existingRenderPage = renderPage;
