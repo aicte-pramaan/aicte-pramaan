@@ -1,114 +1,133 @@
-/* AICTE-PRAMAAN entry page: role selection.
+/* AICTE-PRAMAAN entry page: role selection (v2 design).
  * Load AFTER app.js:  <script src="app.js"></script><script src="entry.js"></script>
- * It builds its own markup and styles, and hooks into the existing
+ * Builds its own markup and styles, and hooks into the existing
  * 2FA modal (#m-2fa), pendingRole, jwtToken and applyRole().
  */
 (function () {
     "use strict";
 
     var ROLES = [
-        {
-            id: "audit",
-            title: "Audit Officer",
-            desc: "Review the hash-chained audit trail and vigilance alerts.",
-            tag: "Sign-in with 2FA",
-            tone: "lock",
-            icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/>'
-        },
-        {
-            id: "aicte",
-            title: "AICTE Admin",
-            desc: "Manage the registry, data ingestion, quotas and analytics.",
-            tag: "Sign-in with 2FA",
-            tone: "lock",
-            icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>'
-        },
-        {
-            id: "institution",
-            title: "Institution Officer",
-            desc: "Upload admissions and track your institution's seat intake.",
-            tag: "Sign-in with 2FA",
-            tone: "lock",
-            icon: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18"/><path d="M2 22h20"/><path d="M10 6h4M10 10h4M10 14h4"/>'
-        },
-        {
-            id: "employer",
-            title: "Employee Verifier",
-            desc: "Check a student's record and print a verified certificate.",
-            tag: "No sign-in needed",
-            tone: "open",
-            icon: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/><path d="m8.5 11 2 2 3.5-3.5"/>'
-        }
+        { id: "audit", title: "Audit Officer",
+          desc: "Review the hash-chained audit trail and vigilance alerts.", access: "lock" },
+        { id: "aicte", title: "AICTE Admin",
+          desc: "Manage the registry, data ingestion, quotas and analytics.", access: "lock" },
+        { id: "institution", title: "Institution Officer",
+          desc: "Upload admissions and track your institution's seat intake.", access: "lock" },
+        { id: "employer", title: "Employee Verifier",
+          desc: "Check a student's record and print a verified certificate.", access: "open" }
     ];
 
+    var ACCESS = {
+        lock: { text: "Two-step sign-in",
+                icon: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>' },
+        open: { text: "No sign-in needed",
+                icon: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>' }
+    };
+
+    // 24-spoke wheel, drawn once and reused for the emblem and the watermark.
+    function chakra() {
+        var s = '<circle cx="100" cy="100" r="94" fill="none" stroke="currentColor" stroke-width="4"/>' +
+                '<circle cx="100" cy="100" r="11" fill="currentColor"/>';
+        for (var i = 0; i < 24; i++) {
+            var a = i * Math.PI / 12, c = Math.cos(a), n = Math.sin(a);
+            s += '<line x1="' + (100 + 16 * c).toFixed(2) + '" y1="' + (100 + 16 * n).toFixed(2) +
+                 '" x2="' + (100 + 82 * c).toFixed(2) + '" y2="' + (100 + 82 * n).toFixed(2) +
+                 '" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
+                 '<circle cx="' + (100 + 88 * Math.cos(a + Math.PI / 24)).toFixed(2) +
+                 '" cy="' + (100 + 88 * Math.sin(a + Math.PI / 24)).toFixed(2) + '" r="2.6" fill="currentColor"/>';
+        }
+        return s;
+    }
+
     var CSS = [
-        "#entry-gate{position:fixed;inset:0;z-index:9000;display:flex;background:#f4f6fb;color:#0f172a;",
-        "font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}",
+        "#entry-gate{position:fixed;inset:0;z-index:9000;display:flex;flex-direction:column;overflow-y:auto;",
+        "background:#f7f7f4;color:#151a2c;-webkit-font-smoothing:antialiased;",
+        "font-family:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}",
         "#entry-gate[hidden]{display:none}",
         "#entry-gate *{box-sizing:border-box}",
-        "#entry-gate .eg-flag{position:absolute;top:0;left:0;right:0;height:4px;z-index:2;",
-        "background:linear-gradient(90deg,#f59e0b 0 33.34%,#ffffff 33.34% 66.67%,#15803d 66.67% 100%);box-shadow:0 1px 0 #e2e8f0}",
+        "#entry-gate:focus{outline:none}",
+        "#entry-gate .eg-flag{position:absolute;top:0;left:0;right:0;height:3px;z-index:3;",
+        "background:linear-gradient(90deg,#d9791a 0 33.34%,#ffffff 33.34% 66.67%,#1e6b45 66.67% 100%);",
+        "box-shadow:0 1px 0 #d9d9d2}",
+        "#entry-gate .eg-chakra{position:absolute;right:-200px;bottom:-220px;width:760px;height:760px;",
+        "color:#23398a;opacity:.07;pointer-events:none;animation:eg-spin 240s linear infinite}",
+        "@keyframes eg-spin{to{transform:rotate(360deg)}}",
 
-        "#entry-gate .eg-side{flex:0 0 380px;display:flex;flex-direction:column;justify-content:space-between;",
-        "padding:44px 40px 32px;color:#cbd5e1;background:linear-gradient(180deg,#0b1020 0%,#10173a 100%)}",
-        "#entry-gate .eg-brand{display:flex;align-items:center;gap:12px}",
-        "#entry-gate .eg-logo{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;",
-        "font-weight:700;font-size:20px;color:#fff;background:linear-gradient(135deg,#7c6cf0,#4f46e5)}",
-        "#entry-gate .eg-name{font-size:18px;font-weight:700;color:#fff;letter-spacing:.2px}",
-        "#entry-gate .eg-badge{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:6px;font-size:11px;",
-        "font-weight:600;color:#67e8f9;background:rgba(34,211,238,.12);border:1px solid rgba(34,211,238,.35)}",
-        "#entry-gate .eg-pitch{margin:0;max-width:300px;font-size:26px;line-height:1.25;font-weight:650;color:#fff}",
-        "#entry-gate .eg-points{list-style:none;margin:22px 0 0;padding:0;display:grid;gap:12px;font-size:14px}",
-        "#entry-gate .eg-points li{display:flex;align-items:center;gap:10px}",
-        "#entry-gate .eg-points li:before{content:'';width:6px;height:6px;border-radius:50%;background:#6366f1;flex:none}",
-        "#entry-gate .eg-ver{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:11px;color:#64748b}",
+        "#entry-gate .eg-wrap{position:relative;z-index:1;flex:1;display:grid;",
+        "grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:72px;align-items:center;",
+        "width:100%;max-width:1080px;margin:0 auto;padding:72px 40px 32px}",
 
-        "#entry-gate .eg-main{flex:1;display:flex;flex-direction:column;overflow-y:auto}",
-        "#entry-gate .eg-center{flex:1;display:flex;flex-direction:column;justify-content:center;",
-        "width:100%;max-width:760px;margin:0 auto;padding:56px 32px 24px}",
-        "#entry-gate h1{margin:0;font-size:28px;font-weight:700;letter-spacing:-.3px}",
-        "#entry-gate .eg-sub{margin:8px 0 28px;font-size:15px;color:#64748b}",
-        "#entry-gate .eg-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}",
+        "#entry-gate .eg-brand{display:flex;align-items:center;gap:12px;color:#23398a}",
+        "#entry-gate .eg-brand svg{width:38px;height:38px;flex:none}",
+        "#entry-gate .eg-name{font-size:15px;font-weight:600;letter-spacing:.04em;color:#151a2c}",
+        "#entry-gate h1{margin:36px 0 0;max-width:420px;font-family:'Source Serif 4',Georgia,'Times New Roman',serif;",
+        "font-size:42px;line-height:1.14;font-weight:600;letter-spacing:-.01em;color:#101a33}",
+        "#entry-gate .eg-lede{margin:18px 0 0;max-width:400px;font-size:16px;line-height:1.6;color:#4d556b}",
+        "#entry-gate .eg-ver{margin:40px 0 0;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;color:#6b7186}",
 
-        "#entry-gate .eg-card{display:flex;flex-direction:column;gap:14px;text-align:left;cursor:pointer;",
-        "padding:20px;border-radius:14px;background:#fff;border:1px solid #e2e8f0;font:inherit;color:inherit;",
-        "transition:border-color .15s,box-shadow .15s,transform .15s}",
-        "#entry-gate .eg-card:hover{border-color:#6366f1;box-shadow:0 8px 24px rgba(79,70,229,.12);transform:translateY(-2px)}",
-        "#entry-gate .eg-card:focus-visible{outline:2px solid #4f46e5;outline-offset:2px}",
-        "#entry-gate .eg-card:active{transform:translateY(0)}",
-        "#entry-gate .eg-ico{width:42px;height:42px;border-radius:10px;display:grid;place-items:center;",
-        "color:#4f46e5;background:#eef2ff}",
-        "#entry-gate .eg-ico svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;",
+        "#entry-gate .eg-panel{background:#fff;border:1px solid #d9d9d2;border-radius:6px;overflow:hidden}",
+        "#entry-gate .eg-panel h2{margin:0;padding:22px 28px 16px;font-family:'Source Serif 4',Georgia,serif;",
+        "font-size:20px;font-weight:600;color:#101a33}",
+        "#entry-gate .eg-list{list-style:none;margin:0;padding:0}",
+        "#entry-gate .eg-row{position:relative;display:flex;align-items:center;gap:20px;width:100%;",
+        "padding:18px 28px;background:transparent;border:0;border-top:1px solid #e6e6e0;text-align:left;",
+        "cursor:pointer;font:inherit;color:inherit;transition:background .15s}",
+        "#entry-gate .eg-row:before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:#d9791a;",
+        "transform:scaleY(0);transition:transform .15s}",
+        "#entry-gate .eg-row:hover{background:#f5f7fc}",
+        "#entry-gate .eg-row:hover:before,#entry-gate .eg-row:focus-visible:before{transform:scaleY(1)}",
+        "#entry-gate .eg-row:focus-visible{outline:2px solid #23398a;outline-offset:-2px}",
+        "#entry-gate .eg-info{flex:1;min-width:0}",
+        "#entry-gate .eg-t{display:block;font-family:'Source Serif 4',Georgia,serif;font-size:19px;font-weight:600;color:#101a33}",
+        "#entry-gate .eg-d{display:block;margin-top:3px;font-size:14px;line-height:1.5;color:#5d6479}",
+        "#entry-gate .eg-acc{flex:none;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;white-space:nowrap}",
+        "#entry-gate .eg-acc svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.9;",
         "stroke-linecap:round;stroke-linejoin:round}",
-        "#entry-gate .eg-t{font-size:16px;font-weight:650}",
-        "#entry-gate .eg-d{margin-top:4px;font-size:13.5px;line-height:1.5;color:#64748b}",
-        "#entry-gate .eg-tag{align-self:flex-start;margin-top:auto;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600}",
-        "#entry-gate .eg-tag.lock{color:#4338ca;background:#eef2ff}",
-        "#entry-gate .eg-tag.open{color:#047857;background:#ecfdf5}",
+        "#entry-gate .eg-acc.lock{color:#23398a}",
+        "#entry-gate .eg-acc.open{color:#1e6b45}",
+        "#entry-gate .eg-go{flex:none;width:16px;height:16px;fill:none;stroke:#9aa1b4;stroke-width:2;",
+        "stroke-linecap:round;stroke-linejoin:round;transition:stroke .15s}",
+        "#entry-gate .eg-row:hover .eg-go{stroke:#23398a}",
 
-        "#entry-gate .eg-foot{padding:16px 32px 24px;text-align:center;font-size:12px;color:#94a3b8}",
-        "#entry-switch{position:fixed;right:16px;bottom:16px;z-index:800;padding:8px 14px;border-radius:999px;cursor:pointer;",
-        "font:600 13px Inter,system-ui,sans-serif;color:#4338ca;background:#fff;border:1px solid #c7d2fe;",
-        "box-shadow:0 4px 14px rgba(15,23,42,.12)}",
-        "#entry-switch:hover{background:#eef2ff}",
-        "#entry-switch:focus-visible{outline:2px solid #4f46e5;outline-offset:2px}",
+        "#entry-gate .eg-foot{position:relative;z-index:1;padding:20px 40px 26px;text-align:center;",
+        "font-size:12.5px;color:#6b7186}",
+
+        "#entry-switch{position:fixed;right:16px;bottom:16px;z-index:800;padding:8px 14px;border-radius:6px;cursor:pointer;",
+        "font:500 13px 'IBM Plex Sans',system-ui,sans-serif;color:#23398a;background:#fff;border:1px solid #d9d9d2}",
+        "#entry-switch:hover{background:#f5f7fc;border-color:#23398a}",
+        "#entry-switch:focus-visible{outline:2px solid #23398a;outline-offset:2px}",
         "#entry-switch[hidden]{display:none}",
 
-        "@media (max-width:860px){",
-        "#entry-gate{flex-direction:column;overflow-y:auto}",
-        "#entry-gate .eg-side{flex:none;padding:28px 24px 22px}",
-        "#entry-gate .eg-pitch,#entry-gate .eg-points{display:none}",
-        "#entry-gate .eg-ver{margin-top:14px}",
-        "#entry-gate .eg-main{overflow:visible}",
-        "#entry-gate .eg-center{padding:28px 20px 12px;justify-content:flex-start}",
+        "@media (max-width:900px){",
+        "#entry-gate .eg-wrap{grid-template-columns:1fr;gap:36px;align-items:start;padding:56px 22px 24px}",
+        "#entry-gate h1{font-size:32px;margin-top:26px}",
+        "#entry-gate .eg-ver{margin-top:24px}",
+        "#entry-gate .eg-chakra{width:520px;height:520px;right:-180px;bottom:-160px}",
         "}",
-        "@media (max-width:560px){#entry-gate .eg-grid{grid-template-columns:1fr}#entry-gate h1{font-size:24px}}",
-        "@media (prefers-reduced-motion:reduce){#entry-gate .eg-card{transition:none}#entry-gate .eg-card:hover{transform:none}}"
+        "@media (max-width:560px){",
+        "#entry-gate .eg-row{flex-wrap:wrap;gap:6px 12px;padding:16px 20px}",
+        "#entry-gate .eg-acc{order:3;width:100%}",
+        "#entry-gate .eg-go{display:none}",
+        "#entry-gate .eg-panel h2{padding:20px 20px 14px}",
+        "}",
+        "@media (prefers-reduced-motion:reduce){#entry-gate .eg-chakra{animation:none}",
+        "#entry-gate .eg-row,#entry-gate .eg-row:before{transition:none}}"
     ].join("");
 
     var gate, switchBtn, waiting = false;
 
+    function loadFonts() {
+        if (document.getElementById("entry-gate-fonts")) return;
+        var link = document.createElement("link");
+        link.id = "entry-gate-fonts";
+        link.rel = "stylesheet";
+        link.href = "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@400;500;600" +
+                    "&family=Source+Serif+4:opsz,wght@8..60,600&display=swap";
+        document.head.appendChild(link);
+    }
+
     function build() {
+        loadFonts();
         var style = document.createElement("style");
         style.id = "entry-gate-styles";
         style.textContent = CSS;
@@ -117,43 +136,38 @@
         gate = document.createElement("div");
         gate.id = "entry-gate";
         gate.setAttribute("role", "dialog");
+        gate.setAttribute("tabindex", "-1");
         gate.setAttribute("aria-modal", "true");
         gate.setAttribute("aria-labelledby", "eg-title");
 
-        var cards = ROLES.map(function (r) {
-            return '<button type="button" class="eg-card" data-role="' + r.id + '">' +
-                '<span class="eg-ico"><svg viewBox="0 0 24 24" aria-hidden="true">' + r.icon + '</svg></span>' +
-                '<span><span class="eg-t">' + r.title + '</span>' +
-                '<span class="eg-d" style="display:block">' + r.desc + '</span></span>' +
-                '<span class="eg-tag ' + r.tone + '">' + r.tag + '</span>' +
-                '</button>';
+        var wheel = chakra();
+        var rows = ROLES.map(function (r) {
+            var a = ACCESS[r.access];
+            return '<li><button type="button" class="eg-row" data-role="' + r.id + '">' +
+                '<span class="eg-info"><span class="eg-t">' + r.title + '</span>' +
+                '<span class="eg-d">' + r.desc + '</span></span>' +
+                '<span class="eg-acc ' + r.access + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + a.icon + '</svg>' + a.text + '</span>' +
+                '<svg class="eg-go" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>' +
+                '</button></li>';
         }).join("");
 
         gate.innerHTML =
             '<div class="eg-flag"></div>' +
-            '<aside class="eg-side">' +
-                '<div>' +
-                    '<div class="eg-brand"><div class="eg-logo">A</div>' +
-                    '<div><div class="eg-name">AICTE-PRAMAAN</div><span class="eg-badge">SEAT-PASS SYSTEM</span></div></div>' +
-                '</div>' +
-                '<div>' +
-                    '<p class="eg-pitch">Admission records you can verify, not just trust.</p>' +
-                    '<ul class="eg-points">' +
-                        '<li>Every record is signed with Ed25519</li>' +
-                        '<li>Merkle proofs show nothing was altered</li>' +
-                        '<li>Students control who can verify them</li>' +
-                    '</ul>' +
-                '</div>' +
-                '<div class="eg-ver">v1.4.2-PROD (NIC MeghRaj)</div>' +
-            '</aside>' +
-            '<main class="eg-main">' +
-                '<div class="eg-center">' +
-                    '<h1 id="eg-title">Choose your role</h1>' +
-                    '<p class="eg-sub">Select how you want to use the dashboard.</p>' +
-                    '<div class="eg-grid">' + cards + '</div>' +
-                '</div>' +
-                '<div class="eg-foot">Government of India, Ministry of Education. Hosted on NIC Cloud (MeghRaj), Pune.</div>' +
-            '</main>';
+            '<svg class="eg-chakra" viewBox="0 0 200 200" aria-hidden="true">' + wheel + '</svg>' +
+            '<div class="eg-wrap">' +
+                '<section>' +
+                    '<div class="eg-brand"><svg viewBox="0 0 200 200" aria-hidden="true">' + wheel + '</svg>' +
+                    '<span class="eg-name">AICTE-PRAMAAN</span></div>' +
+                    '<h1 id="eg-title">Admission records, verified end to end.</h1>' +
+                    '<p class="eg-lede">Every record is signed and added to a tamper-evident ledger. Choose your role to continue.</p>' +
+                    '<p class="eg-ver">Version 1.4.2-PROD, hosted on NIC MeghRaj</p>' +
+                '</section>' +
+                '<section class="eg-panel">' +
+                    '<h2>Select your role</h2>' +
+                    '<ul class="eg-list">' + rows + '</ul>' +
+                '</section>' +
+            '</div>' +
+            '<div class="eg-foot">Government of India, Ministry of Education</div>';
 
         document.body.appendChild(gate);
 
@@ -165,8 +179,8 @@
         document.body.appendChild(switchBtn);
 
         gate.addEventListener("click", function (e) {
-            var card = e.target.closest(".eg-card");
-            if (card) choose(card.getAttribute("data-role"));
+            var row = e.target.closest(".eg-row");
+            if (row) choose(row.getAttribute("data-role"));
         });
         switchBtn.addEventListener("click", function () {
             if (typeof jwtToken !== "undefined") jwtToken = "";
@@ -179,8 +193,7 @@
         gate.hidden = false;
         switchBtn.hidden = true;
         document.documentElement.style.overflow = "hidden";
-        var first = gate.querySelector(".eg-card");
-        if (first) first.focus();
+        gate.focus({ preventScroll: true });
     }
 
     function hide() {
