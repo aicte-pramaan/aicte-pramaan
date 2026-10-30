@@ -666,39 +666,43 @@ document.querySelectorAll(".otp-input").forEach((input, index, inputs) => {
 el("btn-2fa-verify").addEventListener("click", async () => {
     const btn = el("btn-2fa-verify");
     btn.innerHTML = `Verifying TOTP...`;
-    
-    try {
-        // Map the UI role to the backend credentials
-        let username = pendingRole === 'institution' ? 'INST001' : 'AICTE_ADMIN';
-        let password = pendingRole === 'institution' ? 'password123' : 'admin123';
-        let totp_code = "123456"; // demo: UI accepts any digits
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+    try {
         const response = await fetch(`${API_BASE}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password, totp_code })
+            body: JSON.stringify({
+                username: pendingRole === 'institution' ? 'INST001' : 'AICTE_ADMIN',
+                password: pendingRole === 'institution' ? 'password123' : 'admin123',
+                totp_code: "123456"
+            }),
+            signal: controller.signal
         });
 
+        clearTimeout(timeout);
         const data = await response.json();
 
         if (data.access_token) {
-            jwtToken = data.access_token; // Save token for future requests
-            
+            jwtToken = data.access_token;
             el("m-2fa").classList.add("hidden");
             btn.innerHTML = "Verify & Authenticate";
             el("role").value = pendingRole;
             applyRole(pendingRole);
-            
-            // Clear inputs
-            document.querySelectorAll(".otp-input").forEach(i => i.value = ""); 
+            document.querySelectorAll(".otp-input").forEach(i => i.value = "");
             showToast("Security", `Connected to Backend. Role: ${pendingRole.toUpperCase()}`, "success");
         } else {
             showToast("Auth Failed", data.error || "Invalid credentials", "danger");
-            btn.innerHTML = "Verify & Authenticate";
         }
     } catch (err) {
-        console.error(err);
-        showToast("Network Error", "Cannot reach the Node.js backend on Port 5000.", "danger");
+        clearTimeout(timeout);
+        const msg = err.name === 'AbortError'
+            ? "Request timed out — backend may be cold-starting. Try again in 30 seconds."
+            : "Cannot reach the backend. Check your network or the Render service status.";
+        showToast("Network Error", msg, "danger");
+    } finally {
         btn.innerHTML = "Verify & Authenticate";
     }
 });
@@ -2599,4 +2603,10 @@ async function runDemo(scenario) {
     // Correct initial state
     setMenuOpen(false);
 
+})();
+
+// At the bottom of app.js, near the init section
+(function pingBackend() {
+    fetch(`${API_BASE}/api/auth/login`, { method: 'HEAD' })
+        .catch(() => {}); // Silently warm up the container
 })();
