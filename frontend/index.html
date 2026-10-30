@@ -319,7 +319,7 @@
                             </div>
                             <div class="input-group">
                                 <label>APAAR ID (12-digit)</label>
-                                <input type="text" id="f-apaar" class="depth-input" maxlength="12" placeholder="e.g. 123456789012">
+                                <input type="text" id="f-apaar" class="depth-input" autocomplete="off" placeholder="e.g. 123456789012 or provisional ID">
                             </div>
                             <div class="input-group">
                                 <label>Student Name</label>
@@ -330,14 +330,19 @@
                                 <input type="text" id="f-sid" class="depth-input" placeholder="Internal ID">
                             </div>
                             <div class="input-group">
-                                <label>Course Enrolled</label>
+                                <label for="f-course">Course Enrolled</label>
                                 <input type="text" id="f-course" class="depth-input" placeholder="e.g. B.Tech Computer Science">
                             </div>
                             <div class="input-group">
-                                <label>Admission Year</label>
+                                <label for="f-branch">Branch / Programme</label>
+                                <select id="f-branch" class="depth-input"></select>
+                            </div>
+                            <div class="input-group">
+                                <label for="f-year">Admission Year</label>
                                 <input type="number" id="f-year" class="depth-input" value="2026">
                             </div>
                         </div>
+                        <div id="seat-hint" class="helper-text mt-16" aria-live="polite"></div>
                         
                         <div class="checkbox-group mt-16">
                             <label class="check-label"><input type="checkbox" id="f-tfw"> TFW (&lt; 8L Income Verified)</label>

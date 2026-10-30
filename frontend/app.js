@@ -556,8 +556,34 @@ function updateAudit() {
         filter.style.width = "100%";
     }
 
-    // Use the branch selector already present in index.html
-    const formBranch = el("f-branch");
+    // The ingestion form needs its own branch selector. Older copies of
+    // index.html did not contain #f-branch, which caused a startup exception
+    // in syncCourseFromBranch() and prevented every later button listener
+    // from being registered. Create it when missing, but reuse it when present.
+    const formGrid = document.querySelector("#upload .form-grid");
+    let formBranch = el("f-branch");
+
+    if (!formBranch && formGrid) {
+        const group = document.createElement("div");
+        group.className = "input-group";
+
+        const label = document.createElement("label");
+        label.htmlFor = "f-branch";
+        label.textContent = "Branch / Programme";
+
+        formBranch = document.createElement("select");
+        formBranch.id = "f-branch";
+        formBranch.className = "depth-input";
+
+        group.append(label, formBranch);
+
+        const yearGroup = el("f-year")?.closest(".input-group");
+        if (yearGroup && yearGroup.parentElement === formGrid) {
+            formGrid.insertBefore(group, yearGroup);
+        } else {
+            formGrid.appendChild(group);
+        }
+    }
 
     if (formBranch) {
         formBranch.innerHTML = branchOptions(false);
@@ -589,21 +615,33 @@ function updateAudit() {
 
 let lastAutoCourse = "";
 function syncCourseFromBranch() {
-    const c = el("f-course");
-    if (!c.value || c.value === lastAutoCourse) {
-        lastAutoCourse = courseFor(el("f-branch").value);
-        c.value = lastAutoCourse;
+    const courseInput = el("f-course");
+    const branchSelect = el("f-branch");
+
+    // Keep this safe if the ingestion form is not present on a reduced page.
+    if (!courseInput || !branchSelect) return;
+
+    if (!courseInput.value || courseInput.value === lastAutoCourse) {
+        lastAutoCourse = courseFor(branchSelect.value);
+        courseInput.value = lastAutoCourse;
     }
 }
 
 function updateSeatHint() {
-     if (!el("f-inst") || !el("f-branch") || !el("seat-hint")) return;
+    const instSelect = el("f-inst");
+    const branchSelect = el("f-branch");
+    const hint = el("seat-hint");
+    if (!instSelect || !branchSelect || !hint) return;
+
     buildCaches();
-    const inst = el("f-inst").value, code = el("f-branch").value;
+    const inst = instSelect.value;
+    const code = BRANCH_MAP[branchSelect.value] ? branchSelect.value : "CSE";
+    const branch = BRANCH_MAP[code];
     const cap = sanctioned(inst, code);
     const filled = instRegCache[seatKey(inst, code)] || 0;
     const open = Math.max(0, cap - filled);
-    el("seat-hint").innerHTML = `Sanctioned intake for <strong>${escapeHTML(BRANCH_MAP[code].short)}</strong> at ${escapeHTML(inst)}: ${cap}
+
+    hint.innerHTML = `Sanctioned intake for <strong>${escapeHTML(branch.short)}</strong> at ${escapeHTML(inst)}: ${cap}
         · Filled (regular seats): ${filled} · Open: ${open} ` +
         (open === 0 ? pill("Full: new regular admissions will be flagged", "er") : pill("Seats available", "ok"));
 }
@@ -668,6 +706,16 @@ document.querySelectorAll(".otp-input").forEach((input, index, inputs) => {
 // Live 2FA & JWT Authentication
 el("btn-2fa-verify").addEventListener("click", async () => {
     const btn = el("btn-2fa-verify");
+    const otpCode = [...document.querySelectorAll(".otp-input")]
+        .map(input => input.value.trim())
+        .join("");
+
+    if (!/^\d{6}$/.test(otpCode)) {
+        showToast("TOTP Required", "Enter all six digits from your authenticator app.", "danger");
+        return;
+    }
+
+    btn.disabled = true;
     btn.innerHTML = `Verifying TOTP...`;
 
     const controller = new AbortController();
@@ -680,7 +728,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
             body: JSON.stringify({
                 username: pendingRole === 'institution' ? 'INST001' : 'AICTE_ADMIN',
                 password: pendingRole === 'institution' ? 'password123' : 'admin123',
-                totp_code: "123456"
+                totp_code: otpCode
             }),
             signal: controller.signal
         });
@@ -706,6 +754,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
             : "Cannot reach the backend. Check your network or the Render service status.";
         showToast("Network Error", msg, "danger");
     } finally {
+        btn.disabled = false;
         btn.innerHTML = "Verify & Authenticate";
     }
 });
@@ -722,11 +771,13 @@ function applyRole(role) {
 
     // 🔐 Institution Data Lock (Prevents them from uploading for other colleges)
     const instSelect = el("f-inst");
-    if (role === "institution") {
-        instSelect.value = "INST001";
-        instSelect.disabled = true;
-    } else {
-        instSelect.disabled = false;
+    if (instSelect) {
+        if (role === "institution") {
+            instSelect.value = "INST001";
+            instSelect.disabled = true;
+        } else {
+            instSelect.disabled = false;
+        }
     }
     
     // Force a re-render so Dashboard stats update to reflect the RBAC filtering
@@ -736,8 +787,8 @@ function applyRole(role) {
 el("branch-filter").addEventListener("change", e => {
     branchScope = e.target.value;
     recPage = 0;
-    if (branchScope !== "ALL") {
-        el("f-branch").value = branchScope; 
+    if (branchScope !== "ALL" && el("f-branch")) {
+        el("f-branch").value = branchScope;
         syncCourseFromBranch();
         renderIngHead();
         updateSeatHint();
@@ -1101,10 +1152,16 @@ function renderQuota() {
 }
 
 function renderIngHead() {
-    const inst = INSTITUTIONS.find(i => i.id === el("f-inst").value) || INSTITUTIONS[0];
-    const y = Number(el("f-year").value) || 2026;
-    const b = BRANCH_MAP[el("f-branch").value];
-    el("ing-head").innerHTML = `<h2>${escapeHTML(inst.name)} ${pill("AICTE Approved", "ok")}</h2>
+    const instSelect = el("f-inst");
+    const yearInput = el("f-year");
+    const branchSelect = el("f-branch");
+    const target = el("ing-head");
+    if (!instSelect || !yearInput || !branchSelect || !target) return;
+
+    const inst = INSTITUTIONS.find(i => i.id === instSelect.value) || INSTITUTIONS[0];
+    const y = Number(yearInput.value) || 2026;
+    const b = BRANCH_MAP[branchSelect.value] || BRANCH_MAP.CSE;
+    target.innerHTML = `<h2>${escapeHTML(inst.name)} ${pill("AICTE Approved", "ok")}</h2>
         <p><span class="mono">Institute: ${escapeHTML(inst.id)}</span> · ${escapeHTML(b.name)} · AY ${y}-${String(y + 1).slice(-2)} · Batch Sync #8841 <span class="muted">(Polars Engine: 1,240 records processed in 0.84s)</span></p>`;
 }
 
@@ -1235,6 +1292,10 @@ function renderCertificateQR(apaarHmac, size = 104) {
 // 📱 Simulated Multi-Device Notifications (SMS/Email)
 function showToast(title, msg, type = "info") {
     const container = document.getElementById("toast-container");
+    if (!container) {
+        console.warn(`[${title}] ${msg}`);
+        return;
+    }
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
     
@@ -1896,6 +1957,11 @@ document.addEventListener("click", async (e) => {
     const msg = document.getElementById("docker-msg");
     if (!msg) return;
 
+    if (!jwtToken) {
+        msg.innerHTML = '<span class="tag tag-warning">Authenticate as AICTE Admin before streaming records.</span>';
+        return;
+    }
+
     btn.innerHTML = "Processing...";
     btn.disabled = true;
 
@@ -2062,61 +2128,31 @@ document.addEventListener("click", async (e) => {
     });
 })();
 
-// ============================================================
-// MOBILE NAVIGATION — INDEPENDENT INITIALIZATION
-// ============================================================
-(function initializeMobileNavigation() {
-    const toggle = document.getElementById("nav-toggle");
-    const sidebar = document.getElementById("sidebar");
-    const overlay = document.getElementById("nav-overlay");
-
-    if (!toggle || !sidebar || !overlay) return;
-
-    const mobileQuery = window.matchMedia("(max-width: 1024px)");
-
-    function setMenuOpen(open) {
-        if (!mobileQuery.matches) open = false;
-        document.body.classList.toggle("nav-open", open);
-        toggle.setAttribute("aria-expanded", String(open));
-        overlay.setAttribute("aria-hidden", String(!open));
-    }
-
-    toggle.addEventListener("click", function (event) {
-        event.preventDefault();
-        const isOpen = document.body.classList.contains("nav-open");
-        setMenuOpen(!isOpen);
-    });
-
-    overlay.addEventListener("click", function () {
-        setMenuOpen(false);
-    });
-
-    sidebar.querySelectorAll(".nav-menu a").forEach(function (link) {
-        link.addEventListener("click", function () {
-            setMenuOpen(false);
-        });
-    });
-
-    document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape") setMenuOpen(false);
-    });
-
-    function handleBreakpointChange() {
-        if (!mobileQuery.matches) setMenuOpen(false);
-    }
-
-    if (mobileQuery.addEventListener) {
-        mobileQuery.addEventListener("change", handleBreakpointChange);
-    } else {
-        mobileQuery.addListener(handleBreakpointChange);
-    }
-
-    window.addEventListener("resize", handleBreakpointChange);
-    setMenuOpen(false);
-})();
-
 // Wake both Render services on page load
 (function pingBackend() {
     fetch(`${API_BASE}/health`,  { method: 'GET' }).catch(() => {});
     fetch(`${API_BASE_URL}/`,    { method: 'GET' }).catch(() => {});
+})();
+
+// Initial render after the page markup is ready. Without this, the dashboard
+// can remain at its HTML placeholder values until a navigation click occurs.
+(function initializeApplicationUI() {
+    const initialize = () => {
+        try {
+            renderBatch();
+            renderIngHead();
+            updateDashboard();
+            updateRecords();
+            updateSeatHint();
+        } catch (error) {
+            console.error("AICTE-PRAMAAN UI initialization failed:", error);
+            showToast("UI Initialization Error", error.message || "Unable to initialize the dashboard.", "danger");
+        }
+    };
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initialize, { once: true });
+    } else {
+        initialize();
+    }
 })();
