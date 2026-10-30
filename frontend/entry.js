@@ -73,6 +73,11 @@
         if (!gate || !switchBtn) return;
         gate.hidden = true;
         switchBtn.hidden = false;
+        var modal = document.getElementById("m-2fa");
+        if (modal) {
+            modal.classList.add("hidden");
+            modal.setAttribute("aria-hidden", "true");
+        }
         document.documentElement.style.overflow = "";
     }
 
@@ -81,11 +86,23 @@
         document.querySelectorAll(".otp-input").forEach(function (input) { input.value = ""; });
         if (window.location.hash === "#signin") {
             window.history.back();
+            // Defensive fallback for browsers where the history entry cannot be
+            // traversed immediately: restore the profile chooser without stacking UI.
+            window.setTimeout(function () {
+                if (window.location.hash !== "#signin" && gate) {
+                    show("pop");
+                }
+            }, 150);
             return;
         }
         var modal = document.getElementById("m-2fa");
-        if (modal) modal.classList.add("hidden");
-        if (gate && !gate.hidden) gate.focus({ preventScroll: true });
+        if (modal) {
+            modal.classList.add("hidden");
+            modal.setAttribute("aria-hidden", "true");
+        }
+        if (gate) gate.hidden = false;
+        if (switchBtn) switchBtn.hidden = true;
+        if (gate) gate.focus({ preventScroll: true });
     }
 
     function beginSignInHistoryStep() {
@@ -125,6 +142,11 @@
             return;
         }
         if (recordHistory !== false) beginSignInHistoryStep();
+        // The profile chooser is a separate first step, not a backdrop behind OTP.
+        // Hide it before opening verification so the verification dialog is the only
+        // entry layer visible. Cancel/Back returns to #entry and reopens the chooser.
+        if (gate) gate.hidden = true;
+        if (switchBtn) switchBtn.hidden = true;
         if (typeof window.setPendingAuthRole === "function" && typeof pendingRole !== "undefined") {
             window.setPendingAuthRole(pendingRole);
         }
