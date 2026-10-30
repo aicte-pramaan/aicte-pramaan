@@ -1232,11 +1232,456 @@ img, svg, canvas { max-width: 100%; }
   #v-out .tag { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
-/* ================================================================
-   SIDEBAR FIX — PURE BLACK ON ALL SCREEN SIZES
-   ================================================================ */
 
+
+
+/* ==========================================================
+   AICTE-PRAMAAN — RESPONSIVE LAYOUT + SIDEBAR FIX
+   Desktop, laptop, tablet and mobile
+   ========================================================== */
+
+:root {
+    --sidebar-bg: #000000;
+}
+
+/* Black sidebar on every device */
+html body .sidebar,
 html body .layout > aside.sidebar.depth-panel {
     background: #000000 !important;
     background-color: #000000 !important;
+}
+
+/* Prevent flex children from forcing horizontal overflow */
+.layout,
+.canvas,
+.content-area {
+    min-width: 0;
+}
+
+.layout {
+    width: 100%;
+}
+
+/* Desktop */
+@media (min-width: 1025px) {
+    .nav-toggle,
+    .nav-overlay {
+        display: none !important;
+    }
+
+    .sidebar {
+        position: relative;
+        transform: none;
+        visibility: visible;
+        width: 264px;
+        flex-shrink: 0;
+    }
+}
+
+/* Tablet and smaller laptops */
+@media (max-width: 1024px) {
+
+    .nav-toggle {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        flex-shrink: 0;
+        background: #fff;
+        color: #111827;
+        border: 1px solid #d9d9d2;
+        border-radius: 6px;
+        cursor: pointer;
+        z-index: 1002;
+    }
+
+    .sidebar {
+        position: fixed !important;
+        top: 3px;
+        left: 0;
+        bottom: 0;
+        width: min(300px, 88vw);
+        height: calc(100dvh - 3px);
+        max-height: calc(100dvh - 3px);
+        z-index: 1001;
+
+        background: #000000 !important;
+
+        transform: translateX(-105%);
+        visibility: hidden;
+        transition: transform 220ms ease, visibility 220ms ease;
+
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding-bottom: env(safe-area-inset-bottom);
+        box-shadow: 8px 0 30px rgba(0,0,0,.25);
+    }
+
+    body.nav-open .sidebar {
+        transform: translateX(0) !important;
+        visibility: visible !important;
+    }
+
+    .nav-overlay {
+        display: block !important;
+        position: fixed !important;
+        inset: 3px 0 0 0;
+        z-index: 1000;
+
+        background: rgba(0,0,0,.65);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+
+        transition: opacity 220ms ease, visibility 220ms ease;
+    }
+
+    body.nav-open .nav-overlay {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+    }
+
+    body.nav-open {
+        overflow: hidden;
+    }
+
+    .layout {
+        overflow: hidden;
+    }
+
+    .canvas {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .topbar {
+        padding: 0 18px;
+        gap: 12px;
+    }
+
+    .content-area {
+        width: 100%;
+        max-width: none;
+        padding: 22px 20px 36px;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .matrix,
+    .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .split-grid,
+    .cols {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .form-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .env {
+        display: none;
+    }
+}
+
+/* Phones and smaller tablets */
+@media (max-width: 760px) {
+
+    .topbar {
+        height: 56px;
+        padding: 0 12px;
+    }
+
+    .topbar h2 {
+        flex: 1;
+        min-width: 0;
+        font-size: 16px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .content-area {
+        padding: 16px 12px 30px;
+    }
+
+    .form-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+        gap: 13px;
+    }
+
+    .stats-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
+
+    .matrix,
+    .kpi-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .matrix-cell,
+    .kpi-cell {
+        border-left: none !important;
+        border-top: 1px solid var(--line-light);
+    }
+
+    .matrix-cell:first-child,
+    .kpi-cell:first-child {
+        border-top: none;
+    }
+
+    .depth-card {
+        padding: 16px 13px;
+    }
+
+    .depth-card.flush {
+        padding: 0;
+    }
+
+    .card-head {
+        padding: 11px 13px;
+    }
+
+    .checkbox-group {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .action-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .action-row .depth-btn {
+        width: 100%;
+        white-space: normal;
+    }
+
+    .demo-btn-row {
+        flex-direction: column;
+    }
+
+    .demo-scenario-btn {
+        width: 100%;
+        white-space: normal;
+        text-align: left;
+    }
+
+    .split-grid,
+    .cols {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .content-area,
+    .depth-card,
+    .demo-panel {
+        min-width: 0;
+    }
+
+    .chart-container {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .paper {
+        margin: 8px;
+        padding: 18px 12px;
+    }
+
+    .paper .ids {
+        width: 100%;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .paper .nm {
+        font-size: 22px;
+        padding: 0 8px;
+        overflow-wrap: anywhere;
+    }
+
+    .gov-footer {
+        padding: 12px;
+        font-size: 9px;
+        line-height: 1.7;
+        overflow-wrap: anywhere;
+    }
+
+    .export-panel {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .export-actions {
+        width: 100%;
+        flex-direction: column;
+    }
+
+    .export-actions .depth-btn {
+        width: 100%;
+        white-space: normal;
+    }
+}
+
+/* Small phones */
+@media (max-width: 420px) {
+
+    html {
+        font-size: 14px;
+    }
+
+    .brand {
+        padding: 18px 14px;
+    }
+
+    .brand h1 {
+        font-size: 12px;
+    }
+
+    .topbar {
+        padding: 0 9px;
+        gap: 8px;
+    }
+
+    .topbar h2 {
+        font-size: 14px;
+    }
+
+    .content-area {
+        padding: 12px 9px 24px;
+    }
+
+    .depth-card {
+        padding: 13px 10px;
+    }
+
+    .depth-card.flush {
+        padding: 0;
+    }
+
+    .page-head h2 {
+        font-size: 19px;
+    }
+
+    .stat-value,
+    .mv {
+        font-size: 23px;
+    }
+
+    .verify-box {
+        padding: 20px 12px;
+    }
+
+    .verify-input-row {
+        flex-direction: column;
+    }
+
+    .verify-input-row .depth-btn {
+        min-height: 44px;
+    }
+
+    .toast {
+        min-width: 0;
+        width: 100%;
+    }
+}
+
+/* Extra-small phones */
+@media (max-width: 350px) {
+
+    .logo-box {
+        width: 32px;
+        height: 32px;
+    }
+
+    .brand {
+        gap: 8px;
+    }
+
+    .nav-menu a {
+        font-size: 12px;
+        padding: 10px 8px;
+    }
+
+    .content-area {
+        padding-left: 7px;
+        padding-right: 7px;
+    }
+}
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    .sidebar,
+    .nav-overlay {
+        transition: none !important;
+    }
+}
+
+/* ==========================================================
+   FINAL HAMBURGER NAVIGATION OVERRIDES
+   ========================================================== */
+
+@media (max-width: 1024px) {
+
+    .nav-toggle {
+        display: inline-flex !important;
+        position: relative;
+        z-index: 1002;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        cursor: pointer;
+        pointer-events: auto;
+    }
+
+    #sidebar {
+        z-index: 1001;
+        pointer-events: auto;
+    }
+
+    #nav-overlay {
+        z-index: 1000;
+    }
+
+    body.nav-open #sidebar {
+        transform: translateX(0) !important;
+        visibility: visible !important;
+        pointer-events: auto;
+    }
+
+    body.nav-open #nav-overlay {
+        display: block !important;
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+    }
+
+    body:not(.nav-open) #sidebar {
+        transform: translateX(-105%);
+        visibility: hidden;
+        pointer-events: none;
+    }
+}
+
+@media (min-width: 1025px) {
+    .nav-toggle,
+    #nav-overlay {
+        display: none !important;
+    }
+
+    #sidebar {
+        position: relative !important;
+        transform: none !important;
+        visibility: visible !important;
+        pointer-events: auto;
+    }
 }

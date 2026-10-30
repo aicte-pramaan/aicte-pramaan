@@ -1,20 +1,151 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#101a33">
+    <meta name="theme-color" content="#000000">
+    <meta name="description" content="AICTE-PRAMAAN Digital Seat-Pass System">
     <title>AICTE-PRAMAAN - Seat-Pass System</title>
+
     <link rel="stylesheet" href="style.css">
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Essential responsive navigation styles -->
+    <style>
+        html, body {
+            width: 100%;
+            min-height: 100%;
+            margin: 0;
+        }
+
+        body {
+            overflow-x: hidden;
+        }
+
+        .sidebar {
+            background: #000000 !important;
+            background-color: #000000 !important;
+        }
+
+        .sidebar-selectors #branch-filter-wrap {
+            margin-top: 0 !important;
+        }
+
+        .nav-toggle {
+            display: none;
+        }
+
+        @media (max-width: 1024px) {
+            .layout {
+                width: 100%;
+                overflow: hidden;
+            }
+
+            .canvas {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .nav-toggle {
+                display: inline-flex !important;
+                align-items: center;
+                justify-content: center;
+                width: 40px;
+                height: 40px;
+                flex-shrink: 0;
+                cursor: pointer;
+                z-index: 1002;
+                position: relative;
+            }
+
+            #sidebar {
+                position: fixed !important;
+                top: 3px;
+                left: 0;
+                bottom: 0;
+                width: min(300px, 88vw);
+                height: calc(100dvh - 3px);
+                max-height: calc(100dvh - 3px);
+                background: #000000 !important;
+                z-index: 1001;
+                transform: translateX(-105%);
+                visibility: hidden;
+                transition: transform .22s ease, visibility .22s ease;
+                overflow-y: auto;
+                overflow-x: hidden;
+                overscroll-behavior: contain;
+                box-shadow: 8px 0 30px rgba(0,0,0,.25);
+            }
+
+            body.nav-open #sidebar {
+                transform: translateX(0) !important;
+                visibility: visible !important;
+            }
+
+            #nav-overlay {
+                display: block !important;
+                position: fixed;
+                inset: 3px 0 0;
+                z-index: 1000;
+                background: rgba(0,0,0,.65);
+                opacity: 0;
+                visibility: hidden;
+                pointer-events: none;
+                transition: opacity .22s ease, visibility .22s ease;
+            }
+
+            body.nav-open #nav-overlay {
+                opacity: 1;
+                visibility: visible;
+                pointer-events: auto;
+            }
+
+            body.nav-open {
+                overflow: hidden;
+            }
+
+            .content-area {
+                width: 100%;
+                max-width: none;
+                min-width: 0;
+            }
+
+            .env {
+                display: none;
+            }
+        }
+
+        @media (min-width: 1025px) {
+            #sidebar {
+                position: relative;
+                transform: none;
+                visibility: visible;
+                width: 264px;
+                flex-shrink: 0;
+            }
+
+            #nav-overlay {
+                display: none !important;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #sidebar, #nav-overlay {
+                transition: none !important;
+            }
+        }
+    </style>
 </head>
+
 <body data-role="aicte">
     <div class="flag"></div>
-    <div id="nav-overlay" class="nav-overlay"></div>
+    <div id="nav-overlay" class="nav-overlay" aria-hidden="true"></div>
     <div class="layout">
 
         <!-- ═══ SIDEBAR ═══ -->
-        <aside class="sidebar depth-panel">
+        <aside id="sidebar" class="sidebar depth-panel">
 
             <!-- Brand -->
             <div class="brand">
@@ -91,8 +222,24 @@
         <!-- ═══ MAIN CONTENT ═══ -->
         <main class="canvas">
             <header class="topbar">
-                <button id="nav-toggle" class="nav-toggle" aria-label="Toggle menu" aria-expanded="false" aria-controls="sidebar">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                <button
+                    type="button"
+                    id="nav-toggle"
+                    class="nav-toggle"
+                    aria-label="Toggle navigation"
+                    aria-expanded="false"
+                    aria-controls="sidebar">
+
+                    <svg width="20" height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round">
+                        <line x1="3" y1="6" x2="21" y2="6"/>
+                        <line x1="3" y1="12" x2="21" y2="12"/>
+                        <line x1="3" y1="18" x2="21" y2="18"/>
+                    </svg>
                 </button>
                 <h2 id="page-title">Dashboard Overview</h2>
                 <div class="env"><span>NAD link</span><span>v1.4.2-PROD</span><span>SIH26263</span></div>
@@ -171,10 +318,6 @@
                                 <select id="f-inst" class="depth-input"></select>
                             </div>
                             <div class="input-group">
-                                <label>Branch / Programme</label>
-                                <select id="f-branch" class="depth-input"></select>
-                            </div>
-                            <div class="input-group">
                                 <label>APAAR ID (12-digit)</label>
                                 <input type="text" id="f-apaar" class="depth-input" maxlength="12" placeholder="e.g. 123456789012">
                             </div>
@@ -195,7 +338,7 @@
                                 <input type="number" id="f-year" class="depth-input" value="2026">
                             </div>
                         </div>
-                        <div id="seat-hint" class="helper-text mt-16"></div>
+                        
                         <div class="checkbox-group mt-16">
                             <label class="check-label"><input type="checkbox" id="f-tfw"> TFW (&lt; 8L Income Verified)</label>
                             <label class="check-label"><input type="checkbox" id="f-ews"> EWS Category</label>
@@ -549,42 +692,153 @@
     </div>
 
     <div id="toast-container" class="toast-container"></div>
-    <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="app.js"></script>
-    <script src="entry.js"></script>
-    <!-- Patch: move branch-filter into sidebar wrapper after app.js injects it -->
-    <script>
+    
+<!-- External libraries -->
+<script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<!-- Independent mobile navigation handler.
+     Runs before app.js so navigation survives unrelated JS errors. -->
+<script>
 (function () {
-    const wrap = document.getElementById('branch-filter-wrap');
-    const select = document.getElementById('branch-filter');
+    const mobileQuery = window.matchMedia("(max-width: 1024px)");
 
-    if (!wrap || !select) return;
+    function closeMenu() {
+        document.body.classList.remove("nav-open");
 
-    // Keep exactly one Branch / Programme label.
+        const button = document.getElementById("nav-toggle");
+        const overlay = document.getElementById("nav-overlay");
+
+        if (button) {
+            button.setAttribute("aria-expanded", "false");
+        }
+
+        if (overlay) {
+            overlay.setAttribute("aria-hidden", "true");
+        }
+    }
+
+    function toggleMenu() {
+        if (!mobileQuery.matches) {
+            closeMenu();
+            return;
+        }
+
+        const button = document.getElementById("nav-toggle");
+        const overlay = document.getElementById("nav-overlay");
+
+        const open = !document.body.classList.contains("nav-open");
+
+        document.body.classList.toggle("nav-open", open);
+
+        if (button) {
+            button.setAttribute("aria-expanded", String(open));
+        }
+
+        if (overlay) {
+            overlay.setAttribute("aria-hidden", String(!open));
+        }
+    }
+
+    // Capture clicks before app.js can register another toggle handler.
+    document.addEventListener("click", function (event) {
+        const target = event.target instanceof Element
+            ? event.target
+            : event.target.parentElement;
+
+        if (!target) return;
+
+        if (target.closest("#nav-toggle")) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            toggleMenu();
+            return;
+        }
+
+        if (target.closest("#nav-overlay")) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            closeMenu();
+            return;
+        }
+
+        if (target.closest("#sidebar .nav-menu a")) {
+            closeMenu();
+        }
+    }, true);
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+            closeMenu();
+        }
+    });
+
+    function handleResize() {
+        if (!mobileQuery.matches) {
+            closeMenu();
+        }
+    }
+
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
+
+    if (mobileQuery.addEventListener) {
+        mobileQuery.addEventListener("change", handleResize);
+    } else {
+        mobileQuery.addListener(handleResize);
+    }
+
+    // Correct initial state.
+    closeMenu();
+})();
+</script>
+
+<!-- Main application -->
+<script src="app.js"></script>
+<script src="entry.js"></script>
+
+<!-- Branch selector cleanup.
+     app.js generates the dropdown; move it into the existing HTML wrapper. -->
+<script>
+(function () {
+    const wrap = document.getElementById("branch-filter-wrap");
+    const select = document.getElementById("branch-filter");
+
+    if (!wrap || !select) {
+        console.warn("Branch filter initialization was not completed.");
+        return;
+    }
+
+    // Preserve the original HTML label.
     let label = wrap.querySelector('label[for="branch-filter"]');
 
     if (!label) {
-        label = document.createElement('label');
-        label.htmlFor = 'branch-filter';
-        label.textContent = 'Branch / Programme';
+        label = document.createElement("label");
+        label.htmlFor = "branch-filter";
+        label.textContent = "Branch / Programme";
         wrap.prepend(label);
     }
 
-    // Remove duplicate labels injected elsewhere by app.js.
+    // Move the generated select into the original wrapper.
+    const generatedWrapper = select.closest(".role-selector");
+
+    wrap.appendChild(select);
+
+    // Remove the now-empty generated wrapper and its duplicate label.
+    if (generatedWrapper && generatedWrapper !== wrap) {
+        generatedWrapper.remove();
+    }
+
+    // Remove any other duplicate labels.
     document.querySelectorAll('label[for="branch-filter"]').forEach(function (item) {
         if (item !== label) {
             item.remove();
         }
     });
 
-    // Ensure the dropdown is inside the sidebar wrapper.
-    if (!wrap.contains(select)) {
-        wrap.appendChild(select);
-    }
-
-    select.style.width = '100%';
+    select.style.width = "100%";
 })();
 </script>
+
 </body>
 </html>

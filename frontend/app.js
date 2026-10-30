@@ -527,26 +527,62 @@ function updateAudit() {
 }
 
 // Branch UI Injection
+
+// ============================================================
+// BRANCH UI — INITIALIZE EXISTING HTML ELEMENTS
+// Avoid duplicate IDs and duplicate dropdowns.
+// ============================================================
+
 (function injectBranchUI() {
-    const css = document.createElement("style");
-    css.textContent = `.sidebar { overflow-y: auto; } .role-selector + .role-selector { margin-top: -16px; } .role-selector option, .role-selector optgroup { color: #0f172a; background: #fff; } #f-branch { background: #fff; }`;
-    document.head.appendChild(css);
 
-    document.querySelector(".role-selector").insertAdjacentHTML("afterend",
-        `<div class="role-selector depth-input-box">
-            <label for="branch-filter">Branch / Programme</label>
-            <select id="branch-filter">${branchOptions(true)}</select>
-        </div>`);
+    // Sidebar branch selector
+    const wrap = el("branch-filter-wrap");
 
-    el("f-course").closest(".input-group").insertAdjacentHTML("beforebegin",
-        `<div class="input-group">
-            <label>Branch / Programme</label>
-            <select id="f-branch" class="depth-input">${branchOptions(false)}</select>
-        </div>`);
-    document.querySelector("#upload .form-grid").insertAdjacentHTML("afterend", `<div id="seat-hint" class="helper-text mt-16"></div>`);
+    if (wrap) {
+        let filter = el("branch-filter");
 
-    el("quota-matrix").previousElementSibling.querySelector(".muted").id = "quota-sub";
-    el("f-branch").value = "CSE";
+        if (!filter) {
+            filter = document.createElement("select");
+            filter.id = "branch-filter";
+            wrap.appendChild(filter);
+        } else if (!wrap.contains(filter)) {
+            wrap.appendChild(filter);
+        }
+
+        filter.innerHTML = branchOptions(true);
+        filter.value = "ALL";
+        filter.style.width = "100%";
+    }
+
+    // Use the branch selector already present in index.html
+    const formBranch = el("f-branch");
+
+    if (formBranch) {
+        formBranch.innerHTML = branchOptions(false);
+        formBranch.value = "CSE";
+    }
+
+    // Reuse the existing seat hint instead of creating a duplicate
+    if (!el("seat-hint")) {
+        const form = document.querySelector("#upload .form-grid");
+
+        if (form) {
+            form.insertAdjacentHTML(
+                "afterend",
+                '<div id="seat-hint" class="helper-text mt-16"></div>'
+            );
+        }
+    }
+
+    // Preserve the existing quota subtitle
+    const quotaSubtitle =
+        el("quota-sub") ||
+        el("quota-matrix")?.previousElementSibling?.querySelector(".muted");
+
+    if (quotaSubtitle) {
+        quotaSubtitle.id = "quota-sub";
+    }
+
 })();
 
 let lastAutoCourse = "";
@@ -2430,22 +2466,7 @@ async function runDemo(scenario) {
         btn.querySelector('.demo-label').textContent = origLabel;
     }
 }
-// ===== Mobile nav drawer =====
-(function () {
-    const toggle = el("nav-toggle"), overlay = el("nav-overlay");
-    const mq = window.matchMedia("(max-width: 900px)");
-    const setOpen = open => {
-        document.body.classList.toggle("nav-open", open);
-        toggle.setAttribute("aria-expanded", String(open));
-    };
-    toggle.addEventListener("click", () => setOpen(!document.body.classList.contains("nav-open")));
-    overlay.addEventListener("click", () => setOpen(false));
-    document.addEventListener("keydown", e => { if (e.key === "Escape") setOpen(false); });
-    document.querySelectorAll(".nav-menu a").forEach(a => a.addEventListener("click", () => setOpen(false)));
-    mq.addEventListener("change", e => { if (!e.matches) setOpen(false); });
-    // charts must resize when the layout changes
-    window.addEventListener("orientationchange", () => setTimeout(() => window.dispatchEvent(new Event("resize")), 250));
-})();
+
 
 // ===== Responsive tables: safe auto-labeling for phone card views =====
 (function () {
@@ -2499,4 +2520,83 @@ async function runDemo(scenario) {
         prep(t);
         obs.observe(t, { childList: true, subtree: true });
     });
+})();
+
+
+// ============================================================
+// MOBILE NAVIGATION — INDEPENDENT INITIALIZATION
+// Works even if another script has an unrelated runtime error.
+// ============================================================
+
+(function initializeMobileNavigation() {
+
+    const toggle = document.getElementById("nav-toggle");
+    const sidebar = document.getElementById("sidebar");
+    const overlay = document.getElementById("nav-overlay");
+
+    if (!toggle || !sidebar || !overlay) {
+        console.error("Mobile navigation elements are missing.");
+        return;
+    }
+
+    const mobileQuery = window.matchMedia("(max-width: 1024px)");
+
+    function setMenuOpen(open) {
+
+        // Never leave the drawer open on desktop.
+        if (!mobileQuery.matches) {
+            open = false;
+        }
+
+        document.body.classList.toggle("nav-open", open);
+
+        toggle.setAttribute("aria-expanded", String(open));
+        overlay.setAttribute("aria-hidden", String(!open));
+    }
+
+    // Hamburger button
+    toggle.addEventListener("click", function (event) {
+        event.preventDefault();
+
+        const isOpen = document.body.classList.contains("nav-open");
+        setMenuOpen(!isOpen);
+    });
+
+    // Close when tapping outside the drawer
+    overlay.addEventListener("click", function () {
+        setMenuOpen(false);
+    });
+
+    // Close after choosing a navigation page
+    sidebar.querySelectorAll(".nav-menu a").forEach(function (link) {
+        link.addEventListener("click", function () {
+            setMenuOpen(false);
+        });
+    });
+
+    // Close using Escape
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+            setMenuOpen(false);
+        }
+    });
+
+    // Handle changing device orientation or browser size
+    function handleBreakpointChange() {
+        if (!mobileQuery.matches) {
+            setMenuOpen(false);
+        }
+    }
+
+    if (mobileQuery.addEventListener) {
+        mobileQuery.addEventListener("change", handleBreakpointChange);
+    } else {
+        mobileQuery.addListener(handleBreakpointChange);
+    }
+
+    window.addEventListener("resize", handleBreakpointChange);
+
+    // Correct initial state
+    setMenuOpen(false);
+
 })();
