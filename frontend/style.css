@@ -1231,3 +1231,12 @@ img, svg, canvas { max-width: 100%; }
   #v-out .mono { overflow-wrap: anywhere !important; }
   #v-out .tag { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ================================================================
+   SIDEBAR FIX — PURE BLACK ON ALL SCREEN SIZES
+   ================================================================ */
+
+html body .layout > aside.sidebar.depth-panel {
+    background: #000000 !important;
+    background-color: #000000 !important;
+}
