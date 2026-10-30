@@ -918,10 +918,7 @@ function qrSVG(size = 104) {
 }
 
 function buildVerificationUrl(apaarHmac) {
-    const url = new URL(window.location.href);
-
-    url.search = "";
-    url.hash = "";
+    const url = new URL("https://aicte-pramaan-frontend.onrender.com/");
 
     url.searchParams.set("verify", apaarHmac);
 
