@@ -1,0 +1,26 @@
+/* Loaded after login-analytics-fixes.css. */
+/* Keep the 2FA dialog dismissible despite responsive display:flex !important. */
+#m-2fa.modal-overlay.hidden,
+#m-2fa.modal-overlay[aria-hidden="true"] {
+    display: none !important;
+}
+
+#m-2fa .signin-password-wrap {
+    width: min(100%, 320px);
+    margin: 14px auto 4px;
+    text-align: left;
+}
+#m-2fa .signin-password-wrap label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--tx-2, #374151);
+    font-size: 12px;
+    font-weight: 600;
+}
+#m-2fa #signin-password {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    box-sizing: border-box;
+}

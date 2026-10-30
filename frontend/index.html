@@ -141,6 +141,8 @@
     </style>
     <link rel="stylesheet" href="responsive-browser-fixes.css">
     <link rel="stylesheet" href="login-analytics-fixes.css">
+    <link rel="stylesheet" href="auth-security-fixes.css">
+    <link rel="stylesheet" href="minimal-production-ui.css?v=1">
 </head>
 
 <body data-role="aicte">
@@ -199,11 +201,11 @@
                 </a>
                 <a href="#" data-page="vigilance" class="restricted aicte-only">
                     <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
-                    Vigilance Center
+                    Vigilance
                 </a>
                 <a href="#" data-page="review" class="restricted aicte-only">
                     <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>
-                    Dispute &amp; Review
+                    Disputes
                 </a>
                 <a href="#" data-page="impact">
                     <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
@@ -362,18 +364,20 @@
                     </div>
 
                     <div class="depth-card mb-24">
-                        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #f1f5f9;padding-bottom:12px;margin-bottom:16px;">
-                            <h3 style="border:none;padding:0;margin:0;">Batch Ingestion — Zero-Template CSV Mapper</h3>
-                            <span class="tag tag-info">Authenticated API ingestion</span>
+                        <div class="card-head">
+                            <h3>CSV Import</h3>
+                            <span class="tag tag-info">CSV</span>
                         </div>
-                        <p class="helper-text">Compatible with JOSAA / State CET export files. No ERP upgrade required.</p>
-                        <textarea id="csv" class="depth-input code-input" rows="6" placeholder="apaar, student_no, name, institution_id, course, year, tfw, ews, fn, supernumerary, consent"></textarea>
+                        <div class="csv-file-row">
+                            <input id="csv-file" type="file" accept=".csv,text/csv" aria-label="Choose admission CSV file">
+                        </div>
+                        <textarea id="csv" class="depth-input code-input" rows="5" placeholder="Select a CSV file or paste rows here"></textarea>
                         <div class="action-row mt-16">
-                            <button id="csv-btn" class="btn btn-primary depth-btn">Process Batch</button>
-                            <button id="sample-btn" class="btn btn-secondary depth-btn">Load Sample Data</button>
-                            <button id="reset-btn" class="btn btn-danger depth-btn float-right">Clear Local Demo Cache</button>
+                            <button id="csv-btn" class="btn btn-primary depth-btn">Import Records</button>
+                            <button id="sample-btn" class="btn btn-secondary depth-btn">Load sample</button>
+                            <button id="reset-btn" class="btn btn-danger depth-btn float-right">Clear local data</button>
                         </div>
-                        <div id="csv-msg" class="msg mt-16"></div>
+                        <div id="csv-msg" class="msg mt-16" aria-live="polite"></div>
                     </div>
 
                     <div class="depth-card flush mb-24">
@@ -408,11 +412,11 @@
                     </div>
 
                     <div class="depth-card" style="border-left:3px solid var(--navy);">
-                        <h3>Docker Data Engine (Stress Test)</h3>
-                        <p class="helper-text mb-16">Simulate real-world load. Connects to the local Docker microservice to synthesize 300 records using the Polars Fast CSV engine, compute cryptographic hashes, and stream them to the ledger.</p>
+                        <h3>Bulk Data Ingestion</h3>
+                        <p class="helper-text mb-16">Generate and submit a 300-record sample batch.</p>
                         <div class="action-row">
-                            <button id="docker-btn" class="btn btn-primary depth-btn">Stream 300 Records</button>
-                            <span id="docker-msg" class="msg" style="margin-left:12px;"></span>
+                            <button id="bulk-ingest-btn" class="btn btn-primary depth-btn">Run batch</button>
+                            <span id="bulk-ingest-msg" class="msg" style="margin-left:12px;" aria-live="polite"></span>
                         </div>
                     </div>
                 </section>
@@ -442,11 +446,10 @@
                             <div class="verify-icon">
                                 <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary);"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
                             </div>
-                            <h3>Cryptographic Verification</h3>
-                            <p class="helper-text mb-24">Enter a 12-digit APAAR ID. The system extracts the Merkle proof and verifies record integrity against the AICTE root hash.</p>
+                            <h3>Verify Record</h3>
                             <div class="verify-input-row">
-                                <input type="text" id="v-id" class="depth-input large-input" placeholder="0000 0000 0000">
-                                <button id="v-btn" class="btn btn-primary depth-btn large-btn">Verify Identity</button>
+                                <input type="text" id="v-id" class="depth-input large-input" placeholder="APAAR ID">
+                                <button id="v-btn" class="btn btn-primary depth-btn large-btn">Verify</button>
                             </div>
                         </div>
                     </div>
@@ -456,49 +459,41 @@
                 <!-- Vigilance Center -->
                 <section id="vigilance" class="page hidden">
                     <div class="page-head mb-24">
-                        <h2>National Vigilance &amp; ML Anomaly Center</h2>
-                        <p>AICTE Regulation Bureau · enrolment integrity across all synced institutions</p>
+                        <h2>Vigilance</h2>
                     </div>
                     <div class="depth-card flush mb-24"><div id="vig-kpi" class="kpi-grid"></div></div>
                     <div class="split-grid mb-24">
                         <div class="depth-card">
                             <div style="display:flex;justify-content:space-between;align-items:center;">
-                                <h3 style="border:none;padding:0;margin:0;">Isolation Forest — Fraud Clusters</h3>
-                                <span class="tag tag-purple">PCA Reduced</span>
+                                <h3 style="border:none;padding:0;margin:0;">Quota Anomalies</h3>
+                                <span class="tag tag-info">Sample</span>
                             </div>
-                            <p class="helper-text mt-16 mb-16">High-dimensional feature space projection. Red markers denote predicted ghost / anomalous enrolments.</p>
                             <div class="chart-container" style="height:240px;"><canvas id="anomalyScatterChart"></canvas></div>
                         </div>
                         <div class="depth-card">
                             <div style="display:flex;justify-content:space-between;align-items:center;">
-                                <h3 style="border:none;padding:0;margin:0;">Temporal Upload Burst Analysis</h3>
-                                <span class="tag tag-danger">Alert Active</span>
+                                <h3 style="border:none;padding:0;margin:0;">Upload Activity</h3>
+                                <span class="tag tag-info">Sample</span>
                             </div>
-                            <p class="helper-text mt-16 mb-16">Coordinated bulk uploads detected near statutory deadlines. Flag threshold &gt; 75% per hour.</p>
                             <div class="chart-container" style="height:200px;"><canvas id="temporalBurstChart"></canvas></div>
-                            <div class="burst-alert mt-16">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                                88% of INST-7201 batch uploaded within a 14-minute window — routed to review queue.
-                            </div>
-                        </div>
+</div>
                     </div>
                     <div class="depth-card flush mb-24">
                         <div class="card-head">
-                            <h3>Fuzzy Identity Matching — Cross-Institution Duplicate Engine</h3>
-                            <span class="tag tag-warning">Jaro-Winkler Algorithm</span>
+                            <h3>Possible Duplicates</h3>
                         </div>
                         <div class="fuzzy-grid" id="fuzzy-match-container"></div>
                     </div>
                     <div class="depth-card flush mb-24">
                         <div class="card-head">
-                            <h3>Isolation Forest &amp; Fuzzy Linkage Anomaly Queue</h3>
+                            <h3>Flagged Records</h3>
                             <span class="muted" id="anom-count"></span>
                         </div>
                         <div class="scroll"><table id="anom-table"></table></div>
                     </div>
                     <div class="depth-card flush">
                         <div class="card-head">
-                            <h3>Flags from the Local Ledger</h3>
+                            <h3>Record Flags</h3>
                             <span class="muted" id="live-count"></span>
                         </div>
                         <div class="scroll"><table id="live-flags"></table></div>
@@ -593,13 +588,12 @@
                 <!-- Dispute & Review -->
                 <section id="review" class="page hidden">
                     <div class="page-head mb-24">
-                        <h2>Manual Review &amp; Dispute Resolution</h2>
-                        <p>Process student appeals, category mismatches, and review ML-flagged anomalies.</p>
+                        <h2>Dispute Review</h2>
                     </div>
                     <div class="depth-card flush mb-24">
                         <div class="card-head">
-                            <h3>Pending Appeals &amp; Manual Verification Queue</h3>
-                            <span class="tag tag-warning">Sample Queue · Local Only</span>
+                            <h3>Pending Cases</h3>
+                            <span class="tag tag-warning">Sample</span>
                         </div>
                         <div class="scroll"><table id="review-table" class="data-table"></table></div>
                     </div>
@@ -609,7 +603,7 @@
                 <section id="audit" class="page hidden">
                     <div class="depth-card flush">
                         <div class="card-head">
-                            <h3>Backend Audit Chain / Local Demo Trail</h3>
+                            <h3>Audit Trail</h3>
                             <span id="chain-status"></span>
                         </div>
                         <div class="scroll"><table id="audit-table" class="data-table"></table></div>
@@ -622,15 +616,17 @@
         </main>
     </div><!-- /layout -->
 
-    <!-- 2FA Modal -->
+    <!-- Sign-in Modal -->
     <div id="m-2fa" class="modal-overlay hidden" aria-hidden="true">
-        <div class="modal-box depth-card">
-            <div style="text-align:center;margin-bottom:18px;">
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:10px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                <h3 style="border:none;padding:0;margin:0;font-family:'Source Serif 4',Georgia,serif;">Security Verification</h3>
-                <p id="signin-role-label" class="helper-text mt-16" style="font-weight:700;color:var(--navy);">Signing in as: AICTE Admin</p>
-                <p id="signin-status" class="helper-text" aria-live="polite">Enter the six-digit demo code <strong>123456</strong>. This mock backend does not use a real authenticator app.</p>
+        <div class="modal-box depth-card signin-modal">
+            <div class="signin-heading">
+                <h3>Sign in</h3>
             </div>
+            <div class="signin-password-wrap">
+                <label for="signin-password">Password</label>
+                <input id="signin-password" type="password" class="depth-input" autocomplete="current-password" placeholder="Password" maxlength="72" required />
+            </div>
+            <label class="otp-caption">OTP</label>
             <div class="otp-inputs">
                 <input type="text" inputmode="numeric" pattern="[0-9]" autocomplete="one-time-code" aria-label="Verification digit 1" maxlength="1" class="depth-input otp-input"/>
                 <input type="text" inputmode="numeric" pattern="[0-9]" autocomplete="off" aria-label="Verification digit 2" maxlength="1" class="depth-input otp-input"/>
@@ -640,7 +636,7 @@
                 <input type="text" inputmode="numeric" pattern="[0-9]" autocomplete="off" aria-label="Verification digit 6" maxlength="1" class="depth-input otp-input"/>
             </div>
             <div class="action-row mt-24" style="display:flex;gap:10px;">
-                <button id="btn-2fa-verify" type="button" class="btn btn-primary depth-btn" style="flex:1;">Verify &amp; Authenticate</button>
+                <button id="btn-2fa-verify" type="button" class="btn btn-primary depth-btn" style="flex:1;">Sign in</button>
                 <button id="btn-2fa-cancel" type="button" class="btn btn-secondary depth-btn">Cancel</button>
             </div>
         </div>
@@ -701,16 +697,16 @@
     <!-- Review Modal -->
     <div id="m-review" class="modal-overlay hidden">
         <div class="modal-box depth-card">
-            <h3 style="margin-top:0;border-bottom:1px solid var(--line);padding-bottom:10px;font-family:'Source Serif 4',Georgia,serif;">Override &amp; Adjudicate</h3>
+            <h3 style="margin-top:0;border-bottom:1px solid var(--line);padding-bottom:10px;font-family:'Source Serif 4',Georgia,serif;">Review case</h3>
             <dl class="kv mb-16 mt-16" id="review-details" style="grid-template-columns:100px 1fr;background:var(--surface-2);padding:12px;border-radius:var(--r-sm);border:1px solid var(--line);"></dl>
             <div class="input-group mb-16">
-                <label>Officer Comments / Reason for Override</label>
-                <textarea id="review-reason" class="depth-input" rows="3" placeholder="State justification according to AICTE approval handbook..."></textarea>
+                <label>Review note</label>
+                <textarea id="review-reason" class="depth-input" rows="3" placeholder="Add note"></textarea>
             </div>
             <div class="action-row" style="display:flex;gap:10px;">
-                <button class="btn btn-primary depth-btn" id="btn-approve-appeal" style="flex:1;">Approve Appeal</button>
+                <button class="btn btn-primary depth-btn" id="btn-approve-appeal" style="flex:1;">Approve</button>
                 <button class="btn btn-danger depth-btn" id="btn-reject-appeal" style="flex:1;">Reject</button>
-                <button class="btn btn-secondary depth-btn" onclick="document.getElementById('m-review').classList.add('hidden')">Cancel</button>
+                <button class="btn btn-secondary depth-btn" onclick="document.getElementById('m-review').classList.add('hidden')">Close</button>
             </div>
         </div>
     </div>
@@ -821,8 +817,8 @@
 </script>
 
 <!-- Main application -->
-<script src="app.js?v=auth-flow-fix-3"></script>
-<script src="entry.js?v=auth-flow-fix-3"></script>
+<script src="app.js?v=minimal-ui-1"></script>
+<script src="entry.js?v=minimal-ui-1"></script>
 
 <!-- Branch selector cleanup.
      app.js generates the dropdown; move it into the existing HTML wrapper. -->

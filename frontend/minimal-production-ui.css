@@ -1,0 +1,64 @@
+/* AICTE-PRAMAAN minimal production-facing UI layer. */
+
+/* Role chooser: brand and role list only. */
+#entry-gate .eg-wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: center;
+    justify-items: center;
+    gap: 22px;
+    width: 100%;
+    max-width: 520px;
+    min-height: calc(100dvh - 3px);
+    padding: 34px 20px;
+}
+#entry-gate .eg-brand-panel { text-align: center; }
+#entry-gate .eg-brand { justify-content: center; }
+#entry-gate .eg-logo { width: 40px; height: 40px; }
+#entry-gate .eg-name { font-size: 16px; letter-spacing: .02em; }
+#entry-gate .eg-panel { width: 100%; box-shadow: 0 12px 36px rgba(16,26,51,.07); }
+#entry-gate .eg-panel h2 { padding: 18px 22px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #697386; }
+#entry-gate .eg-row { min-height: 58px; padding: 16px 20px; gap: 12px; }
+#entry-gate .eg-t { font-family: 'IBM Plex Sans', sans-serif; font-size: 15px; font-weight: 600; }
+#entry-gate .eg-d, #entry-gate .eg-lede, #entry-gate .eg-ver,
+#entry-gate .eg-chakra, #entry-gate .eg-foot { display: none !important; }
+#entry-gate .eg-acc { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+
+/* Login modal: short labels, no pre-filled identity/connection narration. */
+#m-2fa.modal-overlay.hidden,
+#m-2fa.modal-overlay[aria-hidden="true"] { display: none !important; }
+#m-2fa .signin-modal { width: min(420px, calc(100vw - 28px)); padding: 28px; }
+#m-2fa .signin-heading { margin: 0 0 22px; text-align: center; }
+#m-2fa .signin-heading h3 { margin: 0; padding: 0; border: 0; font-family: 'IBM Plex Sans', sans-serif; font-size: 20px; font-weight: 600; }
+#m-2fa .signin-password-wrap { width: 100%; max-width: none; margin: 0 auto 18px; text-align: left; }
+#m-2fa .signin-password-wrap label,
+#m-2fa .otp-caption { display: block; margin: 0 0 7px; color: var(--tx-2, #374151); font-size: 12px; font-weight: 600; }
+#m-2fa #signin-password { width: 100%; min-height: 44px; }
+#m-2fa .otp-caption { text-align: center; margin-bottom: 10px; }
+#m-2fa .otp-inputs { margin: 0 auto 22px; }
+#m-2fa .action-row { margin-top: 0 !important; }
+#m-2fa #btn-2fa-verify { min-height: 44px; }
+#m-2fa #btn-2fa-cancel { min-height: 44px; }
+#m-2fa #signin-status:empty { display: none; }
+
+/* Compact operational screens. */
+#vigilance .page-head, #review .page-head { margin-bottom: 16px; }
+#vigilance .page-head p, #review .page-head p { display: none; }
+#vigilance .depth-card > p.helper-text { display: none; }
+#vigilance .burst-alert { display: none !important; }
+#vigilance .card-head { gap: 10px; }
+#review .card-head { margin-bottom: 10px; }
+#verify .verify-box > p.helper-text { display: none; }
+#verify .verify-box h3 { margin-bottom: 20px; }
+
+/* CSV file picker. */
+.csv-file-row { margin: 10px 0 12px; }
+#csv-file { display: block; width: 100%; max-width: 100%; padding: 9px; border: 1px solid var(--line, #d9d9d2); border-radius: 5px; background: #fff; color: var(--tx-2, #374151); font-size: 12px; }
+#csv { min-height: 112px; }
+
+@media (max-width: 600px) {
+    #entry-gate .eg-wrap { min-height: calc(100dvh - 3px); padding: 24px 14px; gap: 18px; }
+    #entry-gate .eg-panel h2 { padding: 15px 16px; }
+    #entry-gate .eg-row { padding: 14px 16px; }
+    #m-2fa .signin-modal { padding: 22px 16px; }
+}

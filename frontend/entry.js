@@ -5,15 +5,15 @@
     "use strict";
 
     var ROLES = [
-        { id: "audit", title: "Audit Officer", desc: "Review the hash-chained audit trail and vigilance alerts.", access: "lock" },
-        { id: "aicte", title: "AICTE Admin", desc: "Manage the registry, data ingestion, quotas and analytics.", access: "lock" },
-        { id: "institution", title: "Institution Officer", desc: "Upload admissions and track your institution's seat intake.", access: "lock" },
-        { id: "employer", title: "Employee Verifier", desc: "Check a student's record and print a verified certificate.", access: "open" }
+        { id: "audit", title: "Audit Officer", access: "lock" },
+        { id: "aicte", title: "AICTE Admin", access: "lock" },
+        { id: "institution", title: "Institution Officer", access: "lock" },
+        { id: "employer", title: "Employer / Verifier", access: "open" }
     ];
 
     var ACCESS = {
-        lock: { text: "Two-step sign-in", icon: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>' },
-        open: { text: "No sign-in needed", icon: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>' }
+        lock: { text: "OTP", icon: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>' },
+        open: { text: "Open", icon: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>' }
     };
 
     var CSS = [
@@ -31,6 +31,13 @@
         "@media(max-width:560px){#entry-gate .eg-wrap{gap:24px;padding:42px 14px 18px}#entry-gate h1{font-size:29px;line-height:1.18}#entry-gate .eg-panel h2{padding:18px 16px 13px}#entry-gate .eg-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 10px;padding:15px 16px}#entry-gate .eg-info{grid-column:1/-1}#entry-gate .eg-acc{grid-column:1;justify-self:start;font-size:11px}#entry-gate .eg-go{grid-column:2;grid-row:2;justify-self:end}#entry-gate .eg-foot{padding:14px 14px 22px;font-size:11px}#entry-switch{right:12px;bottom:12px}}",
         "@media(max-width:360px){#entry-gate .eg-row{padding:13px 12px}#entry-gate .eg-t{font-size:17px}#entry-gate .eg-d{font-size:12.5px}}",
         "@media(prefers-reduced-motion:reduce){#entry-gate *{animation:none!important;transition:none!important}}"
+    ].join("") + [
+        "#entry-gate .eg-wrap{grid-template-columns:minmax(0,1fr);align-content:center;justify-items:center;gap:22px;width:100%;max-width:520px;min-height:calc(100dvh - 3px);padding:34px 20px}",
+        "#entry-gate .eg-brand-panel{justify-self:center;text-align:center}#entry-gate .eg-brand{justify-content:center}#entry-gate .eg-logo{width:40px;height:40px}#entry-gate .eg-name{font-size:16px;letter-spacing:.02em}",
+        "#entry-gate .eg-panel{width:100%;box-shadow:0 12px 36px rgba(16,26,51,.07)}#entry-gate .eg-panel h2{padding:18px 22px;font:600 13px 'IBM Plex Sans',sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#697386}",
+        "#entry-gate .eg-row{min-height:58px;padding:16px 20px;gap:12px}#entry-gate .eg-t{font:600 15px 'IBM Plex Sans',sans-serif}#entry-gate .eg-d{display:none}#entry-gate .eg-acc{font-size:10px;text-transform:uppercase;letter-spacing:.06em}",
+        "#entry-gate .eg-lede,#entry-gate .eg-ver,#entry-gate .eg-chakra,#entry-gate .eg-foot{display:none!important}",
+        "@media(max-width:560px){#entry-gate .eg-wrap{grid-template-columns:minmax(0,1fr);min-height:calc(100dvh - 3px);padding:24px 14px;gap:18px}#entry-gate .eg-panel h2{padding:15px 16px}#entry-gate .eg-row{display:flex;align-items:center;padding:14px 16px}#entry-gate .eg-info{grid-column:auto}#entry-gate .eg-acc{margin-left:auto}#entry-gate .eg-go{margin-left:4px}}"
     ].join("");
 
     var gate = null;
@@ -123,17 +130,8 @@
         // Wake a sleeping Render instance while the user enters the OTP.
         // This request is non-blocking; the login POST remains authoritative.
         if (typeof window.warmAicteBackend === "function") {
-            var status = document.getElementById("signin-status");
-            if (status) status.textContent = "Connecting to the AICTE backend while you enter the code…";
-            window.warmAicteBackend().then(function (reachable) {
-                var currentStatus = document.getElementById("signin-status");
-                var currentModal = document.getElementById("m-2fa");
-                if (currentStatus && currentModal && !currentModal.classList.contains("hidden")) {
-                    currentStatus.textContent = reachable
-                        ? "Backend is reachable. Enter demo code 123456 to continue."
-                        : "Backend warm-up did not respond; sign-in will still attempt the login request.";
-                }
-            });
+            // Non-blocking warm-up only; keep connection diagnostics out of the sign-in UI.
+            window.warmAicteBackend();
         }
         var modal = document.getElementById("m-2fa");
         if (!modal) {
@@ -153,8 +151,9 @@
         modal.style.zIndex = "10000";
         modal.classList.remove("hidden");
         modal.setAttribute("aria-hidden", "false");
-        var otp = document.querySelector(".otp-input");
-        if (otp) otp.focus();
+        var password = document.getElementById("signin-password");
+        if (password) password.focus();
+        else { var otp = document.querySelector(".otp-input"); if (otp) otp.focus(); }
     }
 
     function choose(role) {
@@ -179,7 +178,8 @@
         var authenticated = typeof jwtToken !== "undefined" && !!jwtToken &&
             typeof jwtRole !== "undefined" &&
             ((role === "institution" && jwtRole === "INSTITUTION") ||
-             ((role === "aicte" || role === "audit") && jwtRole === "AICTE"));
+             (role === "aicte" && jwtRole === "AICTE") ||
+             (role === "audit" && jwtRole === "AUDIT"));
         if (!isEmployer && !authenticated) return false;
 
         waiting = false;
@@ -209,7 +209,7 @@
         var rows = ROLES.map(function (role) {
             var access = ACCESS[role.access];
             return '<li><button type="button" class="eg-row" data-role="' + role.id + '">' +
-                '<span class="eg-info"><span class="eg-t">' + role.title + '</span><span class="eg-d">' + role.desc + '</span></span>' +
+                '<span class="eg-info"><span class="eg-t">' + role.title + '</span></span>' +
                 '<span class="eg-acc ' + role.access + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + access.icon + '</svg>' + access.text + '</span>' +
                 '<svg class="eg-go" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>' +
                 '</button></li>';
@@ -217,17 +217,12 @@
 
         gate.innerHTML =
             '<div class="eg-flag"></div>' +
-            '<svg class="eg-chakra" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="94" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="100" cy="100" r="11" fill="currentColor"/></svg>' +
             '<div class="eg-wrap">' +
-                '<section>' +
-                    '<div class="eg-brand"><img class="eg-logo" src="assets/aicte-logo.svg" alt="AICTE-inspired emblem"><span class="eg-name">AICTE-PRAMAAN</span></div>' +
-                    '<h1 id="eg-title">Admission records, verified end to end.</h1>' +
-                    '<p class="eg-lede">Every record is signed and added to a tamper-evident ledger. Choose your role to continue.</p>' +
-                    '<p class="eg-ver">Version 1.4.2-PROD · demo environment</p>' +
+                '<section class="eg-brand-panel">' +
+                    '<div class="eg-brand"><img class="eg-logo" src="assets/aicte-logo.svg" alt="AICTE emblem"><span class="eg-name" id="eg-title">AICTE-PRAMAAN</span></div>' +
                 '</section>' +
-                '<section class="eg-panel"><h2>Select your role</h2><ul class="eg-list">' + rows + '</ul></section>' +
-            '</div>' +
-            '<div class="eg-foot">Government of India · Ministry of Education</div>';
+                '<section class="eg-panel"><h2>Select role</h2><ul class="eg-list">' + rows + '</ul></section>' +
+            '</div>';
         document.body.appendChild(gate);
 
         switchBtn = document.createElement("button");

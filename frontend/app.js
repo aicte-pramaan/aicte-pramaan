@@ -11,7 +11,7 @@ window.warmAicteBackend = function warmAicteBackend() {
 const TRUSTED_ED25519_PUBLIC_KEY =
     "b4d6a4f061910c638906414e99cc6a8e0dae3e947ccb9557165c35dd08a8ba63";
 let jwtToken = ""; // In-memory backend JWT session token
-let jwtRole = "";  // Backend role claim: AICTE, INSTITUTION, EMPLOYER
+let jwtRole = "";  // Backend role claim: AICTE, AUDIT, INSTITUTION, EMPLOYER
 
 // ----------------------------------------------------------------------
 // Sync SHA-256 (used for the hash-chained audit trail)
@@ -391,9 +391,9 @@ async function syncRecordsToBackend(records, onProgress) {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `Backend error ${res.status}`);
-        totals.inserted += data.inserted;
-        totals.already_present += data.already_present;
-        totals.invalid += data.invalid;
+        totals.inserted += Number(data.inserted || 0);
+        totals.already_present += Number(data.already_present || 0);
+        totals.invalid += Number(data.invalid || 0);
         if (onProgress) onProgress(Math.min(i + CHUNK, records.length), records.length);
     }
     return totals;
@@ -536,7 +536,7 @@ async function updateAudit() {
     if (!table || !status) return;
 
     // Prefer the backend's MongoDB audit chain when the session permits it.
-    if (jwtToken && ["AICTE", "EMPLOYER"].includes(jwtRole)) {
+    if (jwtToken && ["AICTE", "AUDIT"].includes(jwtRole)) {
         status.innerHTML = pill("Checking backend audit chain…", "in");
         try {
             const response = await fetch(`${API_BASE}/api/audit/verify-chain`, {
@@ -553,7 +553,7 @@ async function updateAudit() {
             let html = `<tr><th>Block</th><th>Action · Actor</th><th>PrevHash → CurrHash</th><th>Event Details</th></tr>`;
             if (!logs.length) html += `<tr><td colspan="4" class="text-center helper-text">No backend audit events found.</td></tr>`;
             logs.slice(0, 100).forEach((item, index) => {
-                const block = item.block ?? (logs.length - index);
+                const block = item.sequence ?? item.block ?? (logs.length - index);
                 const timestampValue = item.createdAt || item.timestamp || "";
                 const timestamp = timestampValue ? new Date(timestampValue).toLocaleString() : "";
                 const prev = item.prev_hash || item.prev || GENESIS;
@@ -811,13 +811,8 @@ function setPendingAuthRole(role) {
     if (!allowed.has(role)) return false;
     pendingRole = role;
 
-    const roleSelect = el("role");
-    const option = roleSelect && [...roleSelect.options].find(item => item.value === role);
-    const roleLabel = el("signin-role-label");
-    if (roleLabel) roleLabel.textContent = `Signing in as: ${option ? option.textContent.replace(/\s*\([^)]*\)\s*$/, "") : role}`;
-
     const status = el("signin-status");
-    if (status) status.textContent = "Enter the six-digit demo code 123456. This mock backend does not use a real authenticator app.";
+    if (status) status.textContent = "";
     return true;
 }
 window.setPendingAuthRole = setPendingAuthRole;
@@ -849,8 +844,9 @@ el("role").addEventListener("change", (e) => {
     if (typeof window.beginEntrySignInStep === "function") window.beginEntrySignInStep();
     modal.classList.remove("hidden");
     modal.setAttribute("aria-hidden", "false");
-    const firstOtp = document.querySelector(".otp-input");
-    if (firstOtp) firstOtp.focus();
+    const passwordField = el("signin-password");
+    if (passwordField) passwordField.focus();
+    else document.querySelector(".otp-input")?.focus();
 });
 
 // 2FA input handling: digits only, paste-friendly, and keyboard accessible.
@@ -882,24 +878,38 @@ el("role").addEventListener("change", (e) => {
     });
 })();
 
-// Backend login. This project currently uses the mock credentials in authRoutes.js;
-// the API's demo TOTP is 123456. This is demo authentication, not production 2FA.
+// Backend login. Passwords are entered by the user and never embedded in frontend code.
 el("btn-2fa-verify").addEventListener("click", async () => {
     const btn = el("btn-2fa-verify");
     const inputs = [...document.querySelectorAll(".otp-input")];
     const otpCode = inputs.map(input => input.value.trim()).join("");
+    const password = el("signin-password")?.value || "";
 
+    if (!password) {
+        showToast("Password required", "Enter the password for the selected account.", "danger");
+        el("signin-password")?.focus();
+        return;
+    }
     if (!/^\d{6}$/.test(otpCode)) {
-        showToast("TOTP Required", "Enter all six digits. The current mock backend accepts 123456.", "danger");
+        showToast("OTP required", "Enter all six digits.", "danger");
         return;
     }
 
-    const isInstitution = pendingRole === "institution";
-    const expectedApiRole = isInstitution ? "INSTITUTION" : "AICTE";
+    const accountByRole = {
+        aicte: { username: "AICTE_ADMIN", role: "AICTE" },
+        audit: { username: "AUDIT_OFFICER", role: "AUDIT" },
+        institution: { username: "INST001", role: "INSTITUTION" }
+    };
+    const selectedAccount = accountByRole[pendingRole];
+    if (!selectedAccount) {
+        showToast("Invalid profile", "Choose a valid account role and try again.", "danger");
+        return;
+    }
+    const expectedApiRole = selectedAccount.role;
     btn.disabled = true;
-    btn.textContent = "Connecting & verifying…";
+    btn.textContent = "Verifying…";
     const signInStatus = el("signin-status");
-    if (signInStatus) signInStatus.textContent = "Sending your sign-in request to the AICTE backend…";
+    if (signInStatus) signInStatus.textContent = "Verifying…";
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 60000);
@@ -910,8 +920,8 @@ el("btn-2fa-verify").addEventListener("click", async () => {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                username: isInstitution ? "INST001" : "AICTE_ADMIN",
-                password: isInstitution ? "password123" : "admin123",
+                username: selectedAccount.username,
+                password,
                 totp_code: otpCode
             }),
             signal: controller.signal
@@ -950,6 +960,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
         el("m-2fa")?.classList.add("hidden");
         el("m-2fa")?.setAttribute("aria-hidden", "true");
         inputs.forEach(input => { input.value = ""; });
+        if (el("signin-password")) el("signin-password").value = "";
         const completed = typeof window.completeEntryRoleSelection === "function"
             ? window.completeEntryRoleSelection(authenticatedRole)
             : (typeof window.hideEntryGate === "function" ? (window.hideEntryGate(), true) : true);
@@ -958,7 +969,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
         }
 
         if (signInStatus) signInStatus.textContent = `Authenticated as ${authenticatedRole}.`;
-        showToast("Authenticated", `Backend session established for ${authenticatedRole.toUpperCase()}.`, "success");
+        showToast("Signed in", "", "success");
     } catch (error) {
         // A rejected login never sets a token. If activation failed after a token
         // was issued, clear it so the UI cannot show a false authenticated state.
@@ -974,7 +985,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
     } finally {
         window.clearTimeout(timeout);
         btn.disabled = false;
-        btn.textContent = "Verify & Authenticate";
+        btn.textContent = "Sign in";
     }
 });
 
@@ -982,6 +993,7 @@ el("btn-2fa-verify").addEventListener("click", async () => {
 el("btn-2fa-cancel")?.addEventListener("click", () => {
     el("m-2fa")?.classList.add("hidden");
     document.querySelectorAll(".otp-input").forEach(input => { input.value = ""; });
+    if (el("signin-password")) el("signin-password").value = "";
     el("role").value = document.body.getAttribute("data-role") || "aicte";
     if (typeof window.cancelEntryRoleSelection === "function") window.cancelEntryRoleSelection();
 });
@@ -996,7 +1008,7 @@ function applyRole(role) {
         jwtToken = "";
         jwtRole = "";
     } else {
-        const expected = role === "institution" ? "INSTITUTION" : "AICTE";
+        const expected = ({ institution: "INSTITUTION", audit: "AUDIT", aicte: "AICTE" })[role];
         if (!jwtToken || jwtRole !== expected) {
             showToast("Authentication required", "Sign in with the matching backend account before switching to this profile.", "danger");
             return false;
@@ -1257,138 +1269,126 @@ el("sample-btn").addEventListener("click", () => {
 });
 
 
+// Load a CSV file directly into the import field.
+el("csv-file")?.addEventListener("change", async event => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    if (!/\.csv$/i.test(file.name) && file.type !== "text/csv") {
+        showToast("CSV file required", "Choose a .csv file.", "warning");
+        event.target.value = "";
+        return;
+    }
+    try {
+        const text = await file.text();
+        el("csv").value = text;
+        const fileLines = text.split(/\r?\n/).filter(line => line.trim());
+        const rowCount = fileLines.length && /^(apaar_id|apaar)\s*,/i.test(fileLines[0])
+            ? fileLines.length - 1
+            : fileLines.length;
+        if (el("csv-msg")) el("csv-msg").textContent = `${rowCount} records ready`;
+    } catch (error) {
+        showToast("File could not be read", "Choose the CSV file again.", "danger");
+    }
+});
+
 el("csv-btn").addEventListener("click", async () => {
     const btn = el("csv-btn");
     const msg = el("csv-msg");
 
-    if (!jwtToken) {
-        showToast("Login Required", "Log in before uploading CSV records.", "danger");
+    if (!jwtToken || jwtRole !== "AICTE") {
+        showToast("AICTE Admin access required", "", "warning");
         return;
     }
 
     const lines = el("csv").value
-        .split("\n")
+        .split(/\r?\n/)
         .map(line => line.trim())
         .filter(Boolean);
 
+    if (lines.length && /^(apaar_id|apaar)\s*,/i.test(lines[0])) lines.shift();
+
     if (!lines.length) {
-        msg.textContent = "Paste CSV records or use Load Sample Data first.";
+        msg.textContent = "Select a CSV file or paste rows.";
         msg.className = "msg mt-16 tag tag-warning";
         return;
     }
 
-    let success = 0;
-    let errors = 0;
+    const yes = value => String(value || "").trim().toLowerCase() === "y";
+    const validRows = [];
     const failures = [];
 
+    for (let i = 0; i < lines.length; i++) {
+        const parts = lines[i].split(",").map(value => value.trim());
+        if (parts.length < 11) {
+            failures.push(`Row ${i + 1}: expected at least 11 columns.`);
+            continue;
+        }
+
+        const apaar = normalizeApaarId(parts[0]);
+        const branchCode = String(parts[11] || "").toUpperCase();
+        const branch = BRANCH_MAP[branchCode] ? branchCode : guessBranch(parts[4]);
+        const year = Number(parts[5]);
+        const row = {
+            apaar,
+            sid: parts[1],
+            name: parts[2],
+            inst: parts[3],
+            course: parts[4],
+            year,
+            branch,
+            tfw: yes(parts[6]),
+            ews: yes(parts[7]),
+            nri: false,
+            fn: yes(parts[8]),
+            sup: yes(parts[9]),
+            consent: yes(parts[10])
+        };
+
+        if (row.apaar.length < 8 || !row.sid || !row.name ||
+            !INSTITUTIONS.some(institution => institution.id === row.inst) ||
+            !row.course || !Number.isInteger(row.year) || !BRANCH_MAP[row.branch]) {
+            failures.push(`Row ${i + 1}: incomplete or invalid data.`);
+            continue;
+        }
+        validRows.push(row);
+    }
+
+    if (!validRows.length) {
+        msg.innerHTML = `<span class="tag tag-danger">No valid rows</span>`;
+        if (failures.length) msg.innerHTML += `<div class="helper-text mt-12">${failures.slice(0, 4).map(escapeHTML).join(" · ")}</div>`;
+        return;
+    }
+
     btn.disabled = true;
-    btn.innerText = "Uploading Records...";
+    btn.textContent = "Importing…";
+    msg.textContent = "";
 
     try {
-        // Sequential upload keeps Merkle leaf ordering predictable.
-        for (let i = 0; i < lines.length; i++) {
-            const parts = lines[i].split(",").map(x => x.trim());
+        // Use the existing bulk API in one request (up to 1,000 rows per batch),
+        // rather than 300 individual calls that can hit the API rate limit.
+        const totals = await syncRecordsToBackend(validRows, (done, total) => {
+            btn.textContent = `Importing ${done}/${total}…`;
+        });
 
-            if (parts.length < 11) {
-                errors++;
-                recordBatchEvent({
-                    apaar_id: parts[0] || "",
-                    student_id: parts[1] || "—",
-                    name: parts[2] || "—",
-                    institution_id: parts[3] || "—",
-                    branch: parts[4] || "—",
-                    category: "CSV row",
-                    response: `Expected at least 11 comma-separated columns; received ${parts.length}.`,
-                    status: "Skipped",
-                    source: "CSV validation"
-                });
-                continue;
-            }
-
-            const yes = value => String(value).toLowerCase() === "y";
-
-            const apaarId = normalizeApaarId(parts[0]);
-            const course = parts[4];
-
-            const branchCode = (parts[11] || "").toUpperCase();
-
-            const branch = BRANCH_MAP[branchCode]
-                ? branchCode
-                : guessBranch(course);
-
-            const payload = {
-                apaar_id: apaarId,
-                student_id: parts[1],
-                name: parts[2],
-                institution_id: parts[3],
-                branch,
-                admission_year: Number(parts[5]),
-
-                is_tfw: yes(parts[6]),
-                is_ews: yes(parts[7]),
-                is_nri: false,
-                is_fn: yes(parts[8]),
-
-                has_consent: yes(parts[10])
-            };
-
-            try {
-                btn.innerText = `Uploading ${i + 1}/${lines.length}...`;
-
-                const backendResult = await postRecordToLedger(payload);
-                recordBatchEvent({
-                    apaar_id: payload.apaar_id,
-                    student_id: payload.student_id,
-                    name: payload.name,
-                    institution_id: payload.institution_id,
-                    branch: payload.branch,
-                    category: quotaCategory(payload),
-                    response: backendResult.message || `Backend accepted CSV record ${i + 1} of ${lines.length}.`,
-                    status: "Committed",
-                    source: "CSV bulk workflow"
-                });
-
-                const result = processRecord({
-                    apaar: apaarId,
-                    sid: payload.student_id,
-                    name: payload.name,
-                    inst: payload.institution_id,
-                    branch,
-                    course,
-                    year: payload.admission_year,
-
-                    tfw: payload.is_tfw,
-                    ews: payload.is_ews,
-                    nri: payload.is_nri,
-                    fn: payload.is_fn,
-                    sup: yes(parts[9]),
-                    ghost_flag: false,
-                    consent: payload.has_consent
-                });
-
-                if (result.success) {
-                    success++;
-                } else {
-                    errors++;
-                    failures.push(`${apaarId}: ${result.msg}`);
-                }
-
-            } catch (error) {
-                errors++;
-                failures.push(`${apaarId}: ${error.message}`);
-                recordBatchEvent({
-                    apaar_id: apaarId,
-                    student_id: payload.student_id,
-                    name: payload.name,
-                    institution_id: payload.institution_id,
-                    branch: payload.branch,
-                    category: quotaCategory(payload),
-                    response: error.message || "Backend rejected the CSV row.",
-                    status: "Rejected",
-                    source: "CSV bulk workflow"
-                });
+        // Mirror accepted rows locally only when the bulk API reports no invalid rows.
+        if (Number(totals.invalid || 0) === 0) {
+            for (const row of validRows) {
+                const result = processRecord(row);
+                if (!result.success) failures.push(`${row.apaar}: ${result.msg}`);
             }
         }
+
+        recordBatchEvent({
+            reference: `CSV-${Date.now()}`,
+            student_id: `BATCH-${validRows.length}`,
+            name: "CSV admission import",
+            institution_id: "Multiple institutions",
+            branch: "Mixed",
+            category: "CSV batch",
+            response: `Inserted ${totals.inserted}; existing ${totals.already_present}; invalid ${totals.invalid}.`,
+            status: totals.invalid || failures.length ? "Warning" : "Committed",
+            source: "CSV bulk import"
+        });
 
         await refreshIngestionActivity(false);
         await updateDashboard();
@@ -1396,26 +1396,21 @@ el("csv-btn").addEventListener("click", async () => {
         updateSeatHint();
 
         msg.innerHTML = `
-            <span class="tag tag-success">${success} uploaded</span>
-            <span class="tag tag-danger">${errors} failed</span>
-            ${
-                failures.length
-                    ? `<div class="helper-text mt-16">${
-                        failures.slice(0, 5).map(escapeHTML).join("<br>")
-                    }</div>`
-                    : ""
-            }
+            <span class="tag tag-success">${Number(totals.inserted || 0)} inserted</span>
+            <span class="tag tag-info">${Number(totals.already_present || 0)} existing</span>
+            <span class="tag ${Number(totals.invalid || 0) ? "tag-danger" : "tag-success"}">${Number(totals.invalid || 0)} invalid</span>
         `;
-
+        if (failures.length) {
+            msg.innerHTML += `<div class="helper-text mt-12">${failures.slice(0, 4).map(escapeHTML).join(" · ")}</div>`;
+        }
     } catch (error) {
-        console.error("CSV ingestion failed:", error);
-        msg.innerHTML = `<span class="tag tag-danger">Batch stopped: ${escapeHTML(error.message || "Unexpected error")}</span>`;
+        console.error("CSV import failed:", error);
+        msg.innerHTML = `<span class="tag tag-danger">${escapeHTML(error.message || "Import failed")}</span>`;
     } finally {
         btn.disabled = false;
-        btn.innerText = "Process Batch";
+        btn.textContent = "Import Records";
     }
 });
-
 
 el("reset-btn").addEventListener("click", () => {
     if (confirm("This clears only this browser's local demo registry and audit cache. MongoDB records on the backend will NOT be deleted. Continue?")) {
@@ -1438,16 +1433,11 @@ const ICON = {
     shield: '<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M7.467.133a1.75 1.75 0 0 1 1.066 0l5.25 1.68A1.75 1.75 0 0 1 15 3.48V7c0 1.566-.32 3.182-1.303 4.682-.983 1.498-2.585 2.813-5.032 3.855a1.7 1.7 0 0 1-1.33 0c-2.447-1.042-4.049-2.357-5.032-3.855C1.32 10.182 1 8.566 1 7V3.48a1.75 1.75 0 0 1 1.217-1.667zm.61 1.429a.25.25 0 0 0-.153 0l-5.25 1.68a.25.25 0 0 0-.174.238V7c0 1.358.275 2.666 1.057 3.86.784 1.194 2.121 2.34 4.366 3.297a.2.2 0 0 0 .154 0c2.245-.956 3.582-2.104 4.366-3.298C13.225 9.666 13.5 8.36 13.5 7V3.48a.25.25 0 0 0-.174-.237z"/></svg>'
 };
 
-const KPIS = [
-    ["Total verified APAAR enrolments", "14,82,910", ""],
-    ["Institutions synced", "8,412", " / 8,540"],
-    ["Excess intake attempts blocked", "4,129", ""],
-    ["Ghost enrolment clusters flagged", "38", ""]
-];
+
 const ANOM = [
-    { id: "ANOM-902", sev: ["High", "er"], score: "0.94", who: "Institute 1-88392011", t: "18 student records share an identical bank prefix and mobile cluster +91-98204-XXXXX.", tag: "Suspected NSP scholarship ghost enrolment", det: "Isolation Forest" },
-    { id: "ANOM-887", sev: ["Medium", "wn"], score: "0.81", who: "College A ↔ College B", t: "Jaro-Winkler phonetic match (0.96) between Karanveer Singh (DOB 14-08-2007) and Karan Vir Singh (DOB 14-08-2007) under different provisional IDs.", tag: "Probable duplicate identity", det: "Fuzzy linkage" },
-    { id: "ANOM-854", sev: ["High", "er"], score: "0.89", who: "Institute 1-72014433", t: "88% of the annual batch was uploaded 14 minutes before the EoA statutory cutoff.", tag: "Temporal burst anomaly", det: "Isolation Forest" }
+    { id: "ANOM-902", sev: ["High", "er"], score: "0.94", who: "INST001", t: "Overlapping quota flags.", tag: "Quota conflict", det: "Rule check" },
+    { id: "ANOM-887", sev: ["Medium", "wn"], score: "0.81", who: "INST001 ↔ INST002", t: "Similar student names.", tag: "Potential duplicate", det: "Jaro-Winkler" },
+    { id: "ANOM-854", sev: ["High", "er"], score: "0.89", who: "INST003", t: "Unusual upload volume.", tag: "Upload pattern", det: "Pattern check" }
 ];
 
 function renderQuota() {
@@ -1675,10 +1665,24 @@ el("batch-refresh-btn")?.addEventListener("click", () => refreshIngestionActivit
 
 function updateVigilance() {
     buildCaches();
-    el("vig-kpi").innerHTML = KPIS.map(k => `<div class="kpi-cell"><div class="mk">${escapeHTML(k[0])}</div><div class="mv">${escapeHTML(k[1])}<small>${escapeHTML(k[2])}</small></div></div>`).join("");
 
-    el("anom-count").innerText = `${ANOM.length} open`;
-    let html = `<tr><th>Alert</th><th>Severity</th><th>Score</th><th>Finding</th></tr>`;
+    const flagged = [];
+    let inScopeCount = 0;
+    for (const r of db.records) {
+        if (!inScope(r)) continue;
+        inScopeCount++;
+        const flags = analyzeFlags(r);
+        if (flags.length) flagged.push([r, flags]);
+    }
+
+    const kpi = el("vig-kpi");
+    if (kpi) {
+        const metrics = [["Records checked", inScopeCount], ["Flagged", flagged.length], ["Sample alerts", ANOM.length]];
+        kpi.innerHTML = metrics.map(item => `<div class="kpi-cell"><div class="mk">${escapeHTML(item[0])}</div><div class="mv">${Number(item[1]).toLocaleString()}</div></div>`).join("");
+    }
+
+    el("anom-count").innerText = `${ANOM.length} sample`;
+    let html = `<tr><th>Reference</th><th>Level</th><th>Score</th><th>Finding</th></tr>`;
     ANOM.forEach(a => {
         html += `<tr>
             <td class="mono nw">#${a.id}<span class="sub">${escapeHTML(a.det)}</span></td>
@@ -1689,17 +1693,9 @@ function updateVigilance() {
     });
     el("anom-table").innerHTML = html;
 
-    const flagged = [];
-    let inScopeCount = 0;
-    for (const r of db.records) {
-        if (!inScope(r)) continue;
-        inScopeCount++;
-        const f = analyzeFlags(r);
-        if (f.length) flagged.push([r, f]);
-    }
-    el("live-count").innerText = `${flagged.length.toLocaleString()} flagged of ${inScopeCount.toLocaleString()} records · ${scopeName()}`;
+    el("live-count").innerText = `${flagged.length.toLocaleString()} / ${inScopeCount.toLocaleString()}`;
     let lhtml = `<tr><th>APAAR ID</th><th>Student</th><th>Institution</th><th>Branch</th><th>Flags</th></tr>`;
-    if (flagged.length === 0) lhtml += `<tr><td colspan="5" class="text-center helper-text">No flagged records in the local ledger.</td></tr>`;
+    if (flagged.length === 0) lhtml += `<tr><td colspan="5" class="text-center helper-text">No flagged records.</td></tr>`;
     
     flagged.slice(0, 25).forEach(([r, f]) => {
         lhtml += `<tr>
@@ -1710,7 +1706,7 @@ function updateVigilance() {
             <td>${f.map(x => `<span class="tag tag-warning">${escapeHTML(x)}</span>`).join(" ")}</td>
         </tr>`;
     });
-    if (flagged.length > 25) lhtml += `<tr><td colspan="5" class="text-center helper-text">Showing the first 25. Use the Registry search for the rest.</td></tr>`;
+    if (flagged.length > 25) lhtml += `<tr><td colspan="5" class="text-center helper-text">Showing 25 records.</td></tr>`;
     el("live-flags").innerHTML = lhtml;
 }
 
@@ -2016,7 +2012,7 @@ function buildCertificate(record, c) {
         <section class="depth-card flush">
 
             <div class="card-head">
-                <h3>Cryptographic Verification</h3>
+                <h3>Verification Details</h3>
                 <span class="muted">Server-side consent gate passed</span>
             </div>
 
@@ -2434,28 +2430,27 @@ if (qrReference) {
 
 
 // ======================================================================
-// Docker Data Engine — FastAPI integration
-// The deployed generator.py exposes GET /api/synthesize/{count}.
+// Bulk Data Ingestion — synthetic batch generator integration.
 // ======================================================================
 const API_BASE_URL = "https://aicte-pramaan-data-engine.onrender.com";
 const DATA_ENGINE_COUNT = 300;
 
 document.addEventListener("click", async event => {
     const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-    const btn = target?.closest("#docker-btn");
+    const btn = target?.closest("#bulk-ingest-btn");
     if (!btn) return;
 
-    const msg = document.getElementById("docker-msg");
+    const msg = document.getElementById("bulk-ingest-msg");
     if (!msg) return;
 
     if (!jwtToken || jwtRole !== "AICTE") {
-        msg.innerHTML = '<span class="tag tag-warning">Sign in as AICTE Admin before sending generated records to the ledger.</span>';
+        msg.innerHTML = '<span class="tag tag-warning">AICTE Admin access required.</span>';
         return;
     }
 
     btn.disabled = true;
-    btn.textContent = "Generating records...";
-    msg.innerHTML = '<span class="tag tag-info">Connecting to the Data Engine...</span>';
+    btn.textContent = "Generating…";
+    msg.innerHTML = '<span class="tag tag-info">Connecting…</span>';
 
     try {
         // Current generator.py route: @app.get("/api/synthesize/{count}")
@@ -2478,20 +2473,19 @@ document.addEventListener("click", async event => {
         if (!engineResponse.ok) {
             if (engineResponse.status === 404) {
                 throw new Error(
-                    `The Data Engine returned 404 for /api/synthesize/${DATA_ENGINE_COUNT}. ` +
-                    `Check that the Render Data Engine service is deploying data-engine/generator.py.`
+                    `Batch service unavailable (${engineResponse.status}).`
                 );
             }
-            throw new Error(engineData.detail || engineData.error || `Data Engine error ${engineResponse.status}`);
+            throw new Error(engineData.detail || engineData.error || `Batch service error ${engineResponse.status}`);
         }
         if (!Array.isArray(engineData.records)) {
-            throw new Error("The Data Engine response did not contain a records array.");
+            throw new Error("Invalid batch response.");
         }
         if (engineData.records.length !== DATA_ENGINE_COUNT) {
-            throw new Error(`The Data Engine returned ${engineData.records.length} records; expected ${DATA_ENGINE_COUNT}.`);
+            throw new Error(`Batch size mismatch: ${engineData.records.length}.`);
         }
 
-        // Translate FastAPI generator records to the Express bulk-ingest schema.
+        // Map generated rows to the Express bulk-ingest schema.
         const engineRecords = engineData.records.map((record, index) => {
             const branch = guessBranch(record.course || "");
             return {
@@ -2516,11 +2510,11 @@ document.addEventListener("click", async event => {
             !record.institution_id || !record.branch || !Number.isInteger(record.admission_year)
         );
         if (invalidLocal.length) {
-            throw new Error(`${invalidLocal.length} generated record(s) were incomplete; none were uploaded. Check the Data Engine response.`);
+            throw new Error(`${invalidLocal.length} generated record(s) were incomplete; none were uploaded. Check generated records.`);
         }
 
         // The Express API permits up to 2,000 records per bulk request.
-        btn.textContent = "Saving to secure ledger...";
+        btn.textContent = "Submitting…";
         const totals = { inserted: 0, already_present: 0, invalid: 0, duplicate_in_batch: 0 };
         const chunkSize = 1000;
 
@@ -2609,19 +2603,19 @@ document.addEventListener("click", async event => {
 
         logAudit(
             "MASS_INGESTION",
-            `Data Engine generated ${engineRecords.length}; backend inserted ${totals.inserted}, ` +
+            `Generated ${engineRecords.length}; inserted ${totals.inserted}, ` +
             `already present ${totals.already_present}, invalid ${totals.invalid}.`
         );
         recordBatchEvent({
-            reference: "DOCKER-BATCH-300",
+            reference: "BULK-BATCH-300",
             student_id: "BATCH-300",
-            name: "Docker synthetic admission batch",
+            name: "Synthetic admission batch",
             institution_id: "Multiple institutions",
             branch: "Mixed",
             category: "Synthetic batch",
-            response: `Data Engine generated ${engineRecords.length}; MongoDB inserted ${totals.inserted}, already present ${totals.already_present}, invalid ${totals.invalid}, duplicate in batch ${totals.duplicate_in_batch}.`,
+            response: `Generated ${engineRecords.length}; inserted ${totals.inserted}; existing ${totals.already_present}; invalid ${totals.invalid}; duplicates ${totals.duplicate_in_batch}.`,
             status: totals.invalid ? "Warning" : "Committed",
-            source: "Docker Data Engine → Express bulk-ingest"
+            source: "Bulk ingestion"
         });
         saveDB();
 
@@ -2638,31 +2632,31 @@ document.addEventListener("click", async event => {
             `${totals.already_present} already existed; ${totals.invalid} invalid.${escapeHTML(timingText + rootText)}</span>`;
 
         showToast(
-            "300-record stream complete",
+            "Batch complete",
             `${totals.inserted} new records saved; ${totals.already_present} were already present.`,
             "success"
         );
     } catch (error) {
-        console.error("Data Engine stream/sync failed:", error);
+        console.error("Bulk ingestion failed:", error);
         const message = error.name === "AbortError"
-            ? "The Data Engine request timed out while Render was starting. Please retry."
+            ? "Request timed out. Please retry."
             : (error.message || "Unable to generate records.");
         recordBatchEvent({
-            reference: "DOCKER-BATCH-300",
+            reference: "BULK-BATCH-300",
             student_id: "BATCH-300",
-            name: "Docker synthetic admission batch",
+            name: "Synthetic admission batch",
             institution_id: "Multiple institutions",
             branch: "Mixed",
             category: "Synthetic batch",
             response: message,
             status: "Rejected",
-            source: "Docker Data Engine → Express bulk-ingest"
+            source: "Bulk ingestion"
         });
         msg.innerHTML = `<span class="tag tag-danger">${escapeHTML(message)}</span>`;
-        showToast("Data Engine Error", message, "danger");
+        showToast("Batch failed", message, "danger");
     } finally {
         btn.disabled = false;
-        btn.textContent = "Stream 300 Records";
+        btn.textContent = "Run batch";
     }
 });
 
@@ -2738,7 +2732,7 @@ function renderReviewQueue() {
     let html = `<tr><th>Reference</th><th>Student</th><th>Institution</th><th>Issue</th><th>Status</th><th>Action</th></tr>`;
     const pending = reviewItems.filter(item => item.status === "Pending");
     if (!pending.length) {
-        html += `<tr><td colspan="6" class="text-center helper-text">No pending demo appeals.</td></tr>`;
+        html += `<tr><td colspan="6" class="text-center helper-text">No pending cases.</td></tr>`;
     }
     pending.forEach(item => {
         html += `<tr>
@@ -2746,7 +2740,7 @@ function renderReviewQueue() {
             <td>${escapeHTML(item.student)}</td>
             <td>${escapeHTML(item.institution)}</td>
             <td>${escapeHTML(item.issue)}</td>
-            <td>${pill("Pending · demo", "wn")}</td>
+            <td>${pill("Sample", "wn")}</td>
             <td><button type="button" class="btn btn-secondary depth-btn" data-review-id="${escapeHTML(item.id)}">Review</button></td>
         </tr>`;
     });
@@ -2765,7 +2759,7 @@ document.addEventListener("click", event => {
             <dt>Student</dt><dd>${escapeHTML(item.student)}</dd>
             <dt>Institution</dt><dd>${escapeHTML(item.institution)}</dd>
             <dt>Issue</dt><dd>${escapeHTML(item.issue)}</dd>
-            <dt>Scope</dt><dd>Local demonstration only</dd>`;
+            <dt>Type</dt><dd>Sample</dd>`;
     }
     if (el("review-reason")) el("review-reason").value = "";
     el("m-review")?.classList.remove("hidden");
@@ -2779,23 +2773,23 @@ function closeReviewModal() {
 function decideDemoReview(decision) {
     const item = reviewItems.find(entry => entry.id === selectedReviewId);
     if (!item) {
-        showToast("No appeal selected", "Choose an appeal from the review table first.", "warning");
+        showToast("Select a case", "Choose a case to review.", "warning");
         return;
     }
     const reason = (el("review-reason")?.value || "").trim();
     if (!reason) {
-        showToast("Reason required", "Enter an officer comment before recording this demo decision.", "warning");
+        showToast("Note required", "Add a review note.", "warning");
         el("review-reason")?.focus();
         return;
     }
-    item.status = decision === "approve" ? "Approved (local demo)" : "Rejected (local demo)";
+    item.status = decision === "approve" ? "Approved (sample)" : "Rejected (sample)";
     logAudit(decision === "approve" ? "DEMO_APPEAL_APPROVED" : "DEMO_APPEAL_REJECTED",
         `${item.id}: ${reason} [local demo only; no backend adjudication route configured]`);
     saveDB();
     closeReviewModal();
     renderReviewQueue();
     updateAudit();
-    showToast("Demo decision recorded", `${item.id} was updated in this browser only. No official decision was submitted.`, "info");
+    showToast("Sample updated", `${item.id} updated locally.`, "info");
 }
 
 el("btn-approve-appeal")?.addEventListener("click", () => decideDemoReview("approve"));
@@ -3070,12 +3064,12 @@ function initVigilanceCharts() {
 function renderFuzzyMatches() {
     const container = el("fuzzy-match-container");
     if (!container) return;
-    container.innerHTML = ANOM.slice(0, 2).map(item => `
+    const item = ANOM.find(entry => entry.det === "Jaro-Winkler");
+    container.innerHTML = item ? `
         <article class="fuzzy-card">
-            <div class="fuzzy-header"><strong>${escapeHTML(item.id)} · ${escapeHTML(item.det)}</strong><span class="fuzzy-score">${escapeHTML(item.score)}</span></div>
-            <p>${escapeHTML(item.t)}</p>
-            <div class="dob-match">Sample alert · not a live ML result</div>
-        </article>`).join("");
+            <div class="fuzzy-header"><strong>${escapeHTML(item.id)} · Potential duplicate</strong><span class="fuzzy-score">${escapeHTML(item.score)}</span></div>
+            <div class="dob-match">Sample</div>
+        </article>` : "";
 }
 
 // Initial render after the page markup is ready. Without this, the dashboard
