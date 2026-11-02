@@ -1,12 +1,69 @@
 const API_BASE = "https://aicte-pramaan-api.onrender.com";
+const BACKEND_HEALTH_URL = `${API_BASE}/health`;
+
+// Render Free Web Services can sleep while idle. These bounded health checks
+// wake the service on a real portal visit and wait for it to become ready.
+// They never call a data-generation or record-writing endpoint.
+async function waitForHttpServiceReady(url, serviceName, {
+    totalTimeoutMs = 120000,
+    requestTimeoutMs = 20000,
+    retryDelayMs = 4000
+} = {}) {
+    const deadline = Date.now() + totalTimeoutMs;
+    let lastError = "No health response received.";
+
+    while (Date.now() < deadline) {
+        const controller = new AbortController();
+        const requestTimeout = Math.min(requestTimeoutMs, Math.max(1, deadline - Date.now()));
+        const timeoutId = window.setTimeout(() => controller.abort(), requestTimeout);
+
+        try {
+            const response = await fetch(url, {
+                method: "GET",
+                headers: { "Accept": "application/json" },
+                cache: "no-store",
+                signal: controller.signal
+            });
+
+            if (response.ok) {
+                return { ready: true, status: response.status };
+            }
+
+            lastError = `${serviceName} health check returned HTTP ${response.status}.`;
+            // A 4xx usually means a bad health URL/configuration, not a cold start.
+            if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+                return { ready: false, error: lastError, status: response.status };
+            }
+        } catch (error) {
+            lastError = error.name === "AbortError"
+                ? `${serviceName} is still starting (health request timed out).`
+                : (error.message || `${serviceName} is not reachable yet.`);
+        } finally {
+            window.clearTimeout(timeoutId);
+        }
+
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) break;
+        await new Promise(resolve => window.setTimeout(resolve, Math.min(retryDelayMs, remainingMs)));
+    }
+
+    return { ready: false, error: `${serviceName} did not become ready within ${Math.round(totalTimeoutMs / 1000)} seconds. ${lastError}` };
+}
+
 let backendWarmupPromise = null;
-window.warmAicteBackend = function warmAicteBackend() {
-    if (backendWarmupPromise) return backendWarmupPromise;
-    backendWarmupPromise = fetch(`${API_BASE}/api/data`, { method: "GET", cache: "no-store" })
-        .then(response => response.ok)
-        .catch(() => false)
-        .finally(() => { backendWarmupPromise = null; });
+function waitForAicteBackendReady() {
+    if (!backendWarmupPromise) {
+        backendWarmupPromise = waitForHttpServiceReady(BACKEND_HEALTH_URL, "Backend API")
+            .finally(() => { backendWarmupPromise = null; });
+    }
     return backendWarmupPromise;
+}
+
+window.warmAicteBackend = function warmAicteBackend() {
+    return waitForAicteBackendReady().then(result => {
+        if (!result.ready) console.warn("AICTE-PRAMAAN backend warm-up:", result.error);
+        return result.ready;
+    });
 };
 const TRUSTED_ED25519_PUBLIC_KEY =
     "b4d6a4f061910c638906414e99cc6a8e0dae3e947ccb9557165c35dd08a8ba63";
@@ -897,15 +954,23 @@ el("btn-2fa-verify").addEventListener("click", async () => {
     const isInstitution = pendingRole === "institution";
     const expectedApiRole = isInstitution ? "INSTITUTION" : "AICTE";
     btn.disabled = true;
-    btn.textContent = "Connecting & verifying…";
+    btn.textContent = "Waking backend…";
     const signInStatus = el("signin-status");
-    if (signInStatus) signInStatus.textContent = "Sending your sign-in request to the AICTE backend…";
+    if (signInStatus) signInStatus.textContent = "Checking that the AICTE backend is awake. This can take up to two minutes on the first visit…";
 
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 60000);
+    const timeout = window.setTimeout(() => controller.abort(), 180000);
     let tokenWasIssued = false;
 
     try {
+        const backendReady = await waitForAicteBackendReady();
+        if (!backendReady.ready) {
+            throw new Error(backendReady.error || "The AICTE backend is not ready. Please retry shortly.");
+        }
+
+        btn.textContent = "Verifying…";
+        if (signInStatus) signInStatus.textContent = "Backend ready. Verifying your sign-in request…";
+
         const response = await fetch(`${API_BASE}/api/auth/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2438,7 +2503,28 @@ if (qrReference) {
 // The deployed generator.py exposes GET /api/synthesize/{count}.
 // ======================================================================
 const API_BASE_URL = "https://aicte-pramaan-data-engine.onrender.com";
+const DATA_ENGINE_HEALTH_URL = `${API_BASE_URL}/health`;
 const DATA_ENGINE_COUNT = 300;
+
+let dataEngineWarmupPromise = null;
+function waitForAicteDataEngineReady() {
+    if (!dataEngineWarmupPromise) {
+        dataEngineWarmupPromise = waitForHttpServiceReady(DATA_ENGINE_HEALTH_URL, "Data Engine")
+            .finally(() => { dataEngineWarmupPromise = null; });
+    }
+    return dataEngineWarmupPromise;
+}
+
+window.warmAicteDataEngine = function warmAicteDataEngine() {
+    return waitForAicteDataEngineReady().then(result => {
+        if (result.ready) {
+            console.info("AICTE-PRAMAAN Data Engine is ready.");
+        } else {
+            console.warn("AICTE-PRAMAAN Data Engine warm-up:", result.error);
+        }
+        return result.ready;
+    });
+};
 
 document.addEventListener("click", async event => {
     const target = event.target instanceof Element ? event.target : event.target?.parentElement;
@@ -2454,11 +2540,19 @@ document.addEventListener("click", async event => {
     }
 
     btn.disabled = true;
-    btn.textContent = "Generating records...";
-    msg.innerHTML = '<span class="tag tag-info">Connecting to the Data Engine...</span>';
+    btn.textContent = "Waking Data Engine...";
+    msg.innerHTML = '<span class="tag tag-info">Waking the Data Engine. A sleeping Render service may take up to two minutes to start...</span>';
 
     try {
-        // Current generator.py route: @app.get("/api/synthesize/{count}")
+        const engineReady = await waitForAicteDataEngineReady();
+        if (!engineReady.ready) {
+            throw new Error(engineReady.error || "The Data Engine is not ready. Please retry shortly.");
+        }
+
+        btn.textContent = "Generating records...";
+        msg.innerHTML = '<span class="tag tag-info">Data Engine is ready. Generating synthetic records...</span>';
+
+        // This endpoint generates synthetic records; it is called only after health succeeds.
         const controller = new AbortController();
         const timeoutId = window.setTimeout(() => controller.abort(), 120000);
         let engineResponse;
@@ -3083,7 +3177,11 @@ function renderFuzzyMatches() {
 (function initializeApplicationUI() {
     const initialize = () => {
         try {
+            // Wake both Render Web Services in the background while the visitor
+            // reviews the static portal and chooses a role. This does not generate
+            // records or block initial rendering.
             if (typeof window.warmAicteBackend === "function") window.warmAicteBackend();
+            if (typeof window.warmAicteDataEngine === "function") window.warmAicteDataEngine();
             renderBatchActivity();
             startBatchFeedPolling();
             renderIngHead();
