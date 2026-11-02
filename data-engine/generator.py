@@ -21,6 +21,16 @@ app.add_middleware(
 INSTITUTIONS = ["INST001", "INST002", "INST003"]
 COURSES = ["B.Tech CSE", "B.Tech ECE", "B.Tech ME", "PGDM", "B.Tech IT"]
 
+
+@app.get("/health", tags=["health"])
+def health_check():
+    """Lightweight readiness endpoint; does not generate records or touch the ledger."""
+    return {
+        "status": "ok",
+        "service": "aicte-pramaan-data-engine"
+    }
+
+
 def get_hash(text: str) -> str:
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
