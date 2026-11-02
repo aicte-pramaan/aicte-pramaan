@@ -1,5 +1,6 @@
 const API_BASE = "https://aicte-pramaan-api.onrender.com";
-const BACKEND_HEALTH_URL = `${API_BASE}/health`;
+// Use the existing lightweight endpoint; some privacy filters block URL paths named "/health".
+const BACKEND_WAKE_URL = `${API_BASE}/api/data`;
 
 // Render Free Web Services can sleep while idle. These bounded health checks
 // wake the service on a real portal visit and wait for it to become ready.
@@ -36,8 +37,18 @@ async function waitForHttpServiceReady(url, serviceName, {
             }
         } catch (error) {
             lastError = error.name === "AbortError"
-                ? `${serviceName} is still starting (health request timed out).`
+                ? `${serviceName} is still starting (request timed out).`
                 : (error.message || `${serviceName} is not reachable yet.`);
+
+            // Browser blockers and CORS failures reject fetch() with TypeError.
+            // Retrying the same blocked request for two minutes cannot wake Render.
+            if (error instanceof TypeError) {
+                return {
+                    ready: false,
+                    blocked: true,
+                    error: `${serviceName} preflight was blocked by the browser or network. The real application request may still work.`
+                };
+            }
         } finally {
             window.clearTimeout(timeoutId);
         }
@@ -53,7 +64,7 @@ async function waitForHttpServiceReady(url, serviceName, {
 let backendWarmupPromise = null;
 function waitForAicteBackendReady() {
     if (!backendWarmupPromise) {
-        backendWarmupPromise = waitForHttpServiceReady(BACKEND_HEALTH_URL, "Backend API")
+        backendWarmupPromise = waitForHttpServiceReady(BACKEND_WAKE_URL, "Backend API")
             .finally(() => { backendWarmupPromise = null; });
     }
     return backendWarmupPromise;
@@ -965,11 +976,15 @@ el("btn-2fa-verify").addEventListener("click", async () => {
     try {
         const backendReady = await waitForAicteBackendReady();
         if (!backendReady.ready) {
-            throw new Error(backendReady.error || "The AICTE backend is not ready. Please retry shortly.");
+            // Do not make a separate warm-up URL a prerequisite for login.
+            // POST /api/auth/login is the real request and will itself reach/wake
+            // the backend. This also avoids getting stuck when a browser blocks
+            // generic health-check paths or cross-origin preflight requests.
+            console.warn("AICTE-PRAMAAN backend preflight skipped:", backendReady.error);
         }
 
         btn.textContent = "Verifying…";
-        if (signInStatus) signInStatus.textContent = "Backend ready. Verifying your sign-in request…";
+        if (signInStatus) signInStatus.textContent = "Sending your sign-in request to the AICTE backend…";
 
         const response = await fetch(`${API_BASE}/api/auth/login`, {
             method: "POST",
@@ -1032,8 +1047,10 @@ el("btn-2fa-verify").addEventListener("click", async () => {
             jwtRole = "";
         }
         const message = error.name === "AbortError"
-            ? "Sign-in timed out. The Render API may be starting; retry."
-            : error.message || "Unable to sign in.";
+            ? "Sign-in timed out. The Render API may still be starting; retry shortly."
+            : (error instanceof TypeError
+                ? "Your browser blocked the sign-in API request. Allow this site/API in Brave Shields or your content-blocking extension, then retry."
+                : error.message || "Unable to sign in.");
         if (signInStatus) signInStatus.textContent = message;
         showToast("Sign-in failed", message, "danger");
     } finally {
@@ -2503,13 +2520,14 @@ if (qrReference) {
 // The deployed generator.py exposes GET /api/synthesize/{count}.
 // ======================================================================
 const API_BASE_URL = "https://aicte-pramaan-data-engine.onrender.com";
-const DATA_ENGINE_HEALTH_URL = `${API_BASE_URL}/health`;
+// The OpenAPI document is a known, harmless GET endpoint; some browser filters block "/health" URLs.
+const DATA_ENGINE_WAKE_URL = `${API_BASE_URL}/openapi.json`;
 const DATA_ENGINE_COUNT = 300;
 
 let dataEngineWarmupPromise = null;
 function waitForAicteDataEngineReady() {
     if (!dataEngineWarmupPromise) {
-        dataEngineWarmupPromise = waitForHttpServiceReady(DATA_ENGINE_HEALTH_URL, "Data Engine")
+        dataEngineWarmupPromise = waitForHttpServiceReady(DATA_ENGINE_WAKE_URL, "Data Engine")
             .finally(() => { dataEngineWarmupPromise = null; });
     }
     return dataEngineWarmupPromise;
@@ -2546,13 +2564,15 @@ document.addEventListener("click", async event => {
     try {
         const engineReady = await waitForAicteDataEngineReady();
         if (!engineReady.ready) {
-            throw new Error(engineReady.error || "The Data Engine is not ready. Please retry shortly.");
+            // The explicit Generate action below is itself a real request that
+            // wakes the Data Engine. Do not let a blocked preflight disable it.
+            console.warn("AICTE-PRAMAAN Data Engine preflight skipped:", engineReady.error);
         }
 
         btn.textContent = "Generating records...";
-        msg.innerHTML = '<span class="tag tag-info">Data Engine is ready. Generating synthetic records...</span>';
+        msg.innerHTML = '<span class="tag tag-info">Contacting the Data Engine. A sleeping Render service may take up to two minutes to start...</span>';
 
-        // This endpoint generates synthetic records; it is called only after health succeeds.
+        // This is the explicit user-requested generation endpoint, never used by page-load warm-up.
         const controller = new AbortController();
         const timeoutId = window.setTimeout(() => controller.abort(), 120000);
         let engineResponse;
