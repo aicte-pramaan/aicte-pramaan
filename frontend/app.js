@@ -965,23 +965,23 @@ el("btn-2fa-verify").addEventListener("click", async () => {
     const isInstitution = pendingRole === "institution";
     const expectedApiRole = isInstitution ? "INSTITUTION" : "AICTE";
     btn.disabled = true;
-    btn.textContent = "Waking backend…";
+    btn.textContent = "Verifying…";
     const signInStatus = el("signin-status");
-    if (signInStatus) signInStatus.textContent = "Checking that the AICTE backend is awake. This can take up to two minutes on the first visit…";
+    if (signInStatus) signInStatus.textContent = "Preparing your sign-in request…";
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 180000);
     let tokenWasIssued = false;
 
     try {
-        const backendReady = await waitForAicteBackendReady();
-        if (!backendReady.ready) {
-            // Do not make a separate warm-up URL a prerequisite for login.
-            // POST /api/auth/login is the real request and will itself reach/wake
-            // the backend. This also avoids getting stuck when a browser blocks
-            // generic health-check paths or cross-origin preflight requests.
-            console.warn("AICTE-PRAMAAN backend preflight skipped:", backendReady.error);
-        }
+        // Backend warm-up runs in the background when the OTP
+        // dialog opens. The actual login request is authoritative.
+        // Never block authentication on an optional health check.
+
+        console.info(
+            "Submitting login request directly to the AICTE backend."
+        );
+
 
         btn.textContent = "Verifying…";
         if (signInStatus) signInStatus.textContent = "Sending your sign-in request to the AICTE backend…";
@@ -2558,16 +2558,18 @@ document.addEventListener("click", async event => {
     }
 
     btn.disabled = true;
-    btn.textContent = "Waking Data Engine...";
+    btn.textContent = "Generating records...";
     msg.innerHTML = '<span class="tag tag-info">Waking the Data Engine. A sleeping Render service may take up to two minutes to start...</span>';
 
     try {
-        const engineReady = await waitForAicteDataEngineReady();
-        if (!engineReady.ready) {
-            // The explicit Generate action below is itself a real request that
-            // wakes the Data Engine. Do not let a blocked preflight disable it.
-            console.warn("AICTE-PRAMAAN Data Engine preflight skipped:", engineReady.error);
-        }
+        // Data Engine warm-up runs in the background.
+        // The explicit generation request below will wake Render
+        // if the Data Engine has gone to sleep.
+
+        console.info(
+            "Submitting generation request to the AICTE Data Engine."
+        );
+
 
         btn.textContent = "Generating records...";
         msg.innerHTML = '<span class="tag tag-info">Contacting the Data Engine. A sleeping Render service may take up to two minutes to start...</span>';
