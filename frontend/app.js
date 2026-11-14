@@ -147,14 +147,38 @@ function rechain(list) {
 // Database Simulation (LocalStorage)
 const DB_KEY = "aicte_apaar_depth_v1";
 
+// These three entries are the original local demonstration institutions.
+// Their intake values are not official seat approvals and are not applied to
+// newly imported IIT/NIT/IIIT/GFTI/RGIPT or AICTE-listed institutions.
 const INSTITUTIONS = [
     { id: "INST001", name: "Govind Institute of Technology",  base: 60, over: { CSE: 2 } },
     { id: "INST002", name: "Rajarshi College of Engineering", base: 60, over: { IT: 4 } },
     { id: "INST003", name: "Sharda School of Management",     base: 60, over: { PGDM: 2 } }
 ];
+
+let institutionDirectory = INSTITUTIONS.map(item => ({
+    institution_id: item.id,
+    name: item.name,
+    category: "DEMO",
+    city: "Demo",
+    state: "Demo",
+    source: "AICTE-PRAMAAN sample data",
+    verification_status: "demo",
+    is_active: true,
+    is_demo: true
+}));
+
+// The only existing institution login in the demo auth service is INST001.
+// Additional institution user accounts need a separate account-provisioning feature.
+const institutionScopeId = () => "INST001";
+const getInstitutionById = id =>
+    institutionDirectory.find(item => item.institution_id === id) ||
+    INSTITUTIONS.find(item => item.id === id) ||
+    null;
+
 const sanctioned = (instId, code) => {
     const i = INSTITUTIONS.find(x => x.id === instId);
-    if (!i) return Infinity;
+    if (!i) return null;
     return i.over[code] !== undefined ? i.over[code] : i.base;
 };
 
@@ -222,8 +246,7 @@ let branchScope = "ALL";
 // 🔐 RBAC Granular Data Filtering
 const inScope = r => {
     const role = document.body.getAttribute("data-role") || "aicte";
-    // Institution Officer can ONLY see their own institute's data (INST001)
-    if (role === "institution" && r.inst !== "INST001") return false;
+    if (role === "institution" && r.inst !== institutionScopeId()) return false;
     return branchScope === "ALL" || branchOf(r) === branchScope;
 };
 const scopeName = () => branchScope === "ALL" ? "All Branches" : BRANCH_MAP[branchScope].name;
@@ -253,7 +276,7 @@ const escapeHTML = str => String(str).replace(/[&<>'"]/g,
 const COLOR = { ok: "success", er: "danger", wn: "warning", in: "primary", pu: "purple" };
 const KIND  = { ok: "tag-success", er: "tag-danger", wn: "tag-warning", in: "tag-info", pu: "tag-purple" };
 const pill  = (text, kind) => `<span class="tag ${KIND[kind] || ""}">${escapeHTML(text)}</span>`;
-const getInstName = id => (INSTITUTIONS.find(i => i.id === id) || { name: id }).name;const sortRecords = () => [...db.records].sort((a, b) => a.apaar.localeCompare(b.apaar));
+const getInstName = id => getInstitutionById(id)?.name || String(id || "Unknown institution");const sortRecords = () => [...db.records].sort((a, b) => a.apaar.localeCompare(b.apaar));
 
 function branchOptions(withAll) {
     let h = withAll ? '<option value="ALL">All Branches</option>' : "";
@@ -366,11 +389,11 @@ function analyzeFlags(record) {
         flags.push("Status Conflict (Multiple Quotas)");
     }
     if (!record.sup) {
-        const instData = INSTITUTIONS.find(i => i.id === record.inst);
         const b = branchOf(record);
         const currentCount = instRegCache[seatKey(record.inst, b)] || 0;
-        if (instData && currentCount > sanctioned(record.inst, b)) {
-            flags.push("Exceeds AICTE Approved Intake");
+        const configuredIntake = sanctioned(record.inst, b);
+        if (Number.isFinite(configuredIntake) && currentCount > configuredIntake) {
+            flags.push("Exceeds configured demo intake");
         }
     }
     if (record.ghost_flag) flags.push("ML Flag: Anomaly Detected");
@@ -479,7 +502,9 @@ async function updateDashboard() {
         if (!rows[k]) rows[k] = { inst, branch, reg: 0, sup: 0 };
         return rows[k];
     };
-    if (branchScope !== "ALL") INSTITUTIONS.forEach(i => addRow(i.id, branchScope));
+    if (branchScope !== "ALL") {
+        institutionDirectory.forEach(item => addRow(item.institution_id, branchScope));
+    }
 
     db.records.forEach(r => {
         if (!inScope(r)) return;
@@ -487,7 +512,7 @@ async function updateDashboard() {
         const flags = analyzeFlags(r);
         if (flags.length > 0) flaggedCount++;
         if (flags.some(f => f.includes("Dual"))) dupCount++;
-        if (INSTITUTIONS.some(i => i.id === r.inst)) {
+        if (getInstitutionById(r.inst)) {
             const row = addRow(r.inst, branchOf(r));
             if (r.sup) row.sup++; else row.reg++;
         }
@@ -507,15 +532,18 @@ async function updateDashboard() {
     
     list.slice(0, 60).forEach(data => {
         const intake = sanctioned(data.inst, data.branch);
-        const overLimit = data.reg > intake;
-        const statusTag = overLimit 
-            ? `<span class="tag tag-danger">Excess: ${data.reg - intake}</span>` 
-            : `<span class="tag tag-success">Compliant</span>`;
+        const hasConfiguredIntake = Number.isFinite(intake);
+        const overLimit = hasConfiguredIntake && data.reg > intake;
+        const statusTag = !hasConfiguredIntake
+            ? `<span class="tag tag-warning">Intake not configured</span>`
+            : (overLimit
+                ? `<span class="tag tag-danger">Excess: ${data.reg - intake}</span>`
+                : `<span class="tag tag-success">Within configured demo intake</span>`);
         
         tableHTML += `<tr>
             <td><strong>${escapeHTML(getInstName(data.inst))}</strong></td>
             <td><span class="chip" title="${escapeHTML(BRANCH_MAP[data.branch].name)}">${data.branch}</span></td>
-            <td class="num">${intake}</td>
+            <td class="num">${hasConfiguredIntake ? intake : "Not configured"}</td>
             <td class="num">${data.reg}</td>
             <td class="num">${data.sup}</td>
             <td>${statusTag}</td>
@@ -1132,12 +1160,94 @@ el("branch-filter")?.addEventListener("change", e => {
     renderPage(activePage());
 });
 
-el("f-inst").innerHTML = INSTITUTIONS.map(i => `<option value="${i.id}">${i.name} (${i.id})</option>`).join("");
+function renderInstitutionOptions(searchText = "", preferredId = "") {
+    const select = el("f-inst");
+    if (!select) return;
+
+    const query = String(searchText || "").trim().toLowerCase();
+    const currentId = preferredId || select.value || "INST001";
+    const matches = institutionDirectory.filter(item => {
+        if (item.is_active === false) return false;
+        const searchable = [
+            item.institution_id, item.name, item.short_name, item.category,
+            item.state, item.city, ...(item.aliases || [])
+        ].join(" ").toLowerCase();
+        return !query || searchable.includes(query);
+    });
+
+    const categories = [...new Set(matches.map(item => item.category || "OTHER"))].sort();
+    const html = categories.map(category => {
+        const options = matches.filter(item => (item.category || "OTHER") === category)
+            .map(item => `<option value="${escapeHTML(item.institution_id)}">${escapeHTML(item.name)} (${escapeHTML(item.institution_id)})</option>`)
+            .join("");
+        return `<optgroup label="${escapeHTML(category)}">${options}</optgroup>`;
+    }).join("");
+
+    select.innerHTML = html || '<option value="">No matching institutions</option>';
+    select.value = matches.some(item => item.institution_id === currentId)
+        ? currentId
+        : (matches[0]?.institution_id || "");
+    updateInstitutionMeta();
+}
+
+function updateInstitutionMeta() {
+    const meta = el("f-inst-meta");
+    if (!meta) return;
+    const inst = getInstitutionById(el("f-inst")?.value);
+    if (!inst) {
+        meta.textContent = "No institution selected.";
+        return;
+    }
+    const location = [inst.city, inst.state].filter(Boolean).join(", ");
+    const source = inst.is_demo ? "Local demo entry" : (inst.source || "Source not recorded");
+    meta.textContent = [inst.category, location, source].filter(Boolean).join(" · ");
+}
+
+async function loadInstitutionDirectory() {
+    const select = el("f-inst");
+    const currentId = institutionScopeId() || select?.value || "INST001";
+    try {
+        const response = await fetch(`${API_BASE}/api/institutions?limit=5000`, {
+            method: "GET",
+            headers: { "Accept": "application/json" },
+            cache: "no-store"
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !Array.isArray(data.items)) {
+            throw new Error(data.error || `Institution directory returned HTTP ${response.status}.`);
+        }
+
+        const merged = new Map(institutionDirectory.map(item => [item.institution_id, item]));
+        data.items.forEach(item => merged.set(item.institution_id, item));
+        institutionDirectory = [...merged.values()].sort((a, b) =>
+            (a.category || "").localeCompare(b.category || "") ||
+            a.name.localeCompare(b.name)
+        );
+    } catch (error) {
+        console.warn("Institution directory could not be refreshed; demo institutions remain available:", error.message);
+    }
+
+    renderInstitutionOptions("", currentId);
+    renderIngHead();
+    updateSeatHint();
+    await updateDashboard();
+    updateRecords();
+}
+
+renderInstitutionOptions("", "INST001");
+el("f-inst-search")?.addEventListener("input", event => {
+    renderInstitutionOptions(event.target.value, el("f-inst")?.value || "INST001");
+});
+loadInstitutionDirectory();
 
 const _el749 = el("f-branch");
 if (_el749) _el749.addEventListener("change", () => { syncCourseFromBranch(); renderIngHead(); updateSeatHint(); });
 
-el("f-inst").addEventListener("change", updateSeatHint);
+el("f-inst").addEventListener("change", () => {
+    updateInstitutionMeta();
+    updateSeatHint();
+    renderIngHead();
+});
 syncCourseFromBranch();
 
 
@@ -1537,9 +1647,10 @@ function renderQuota() {
     let core = 0;
     INSTITUTIONS.forEach(i => codes.forEach(c => { core += sanctioned(i.id, c); }));
 
+    const demoIds = new Set(INSTITUTIONS.map(item => item.id));
+    const demoRecords = db.records.filter(record => inScope(record) && demoIds.has(record.inst));
     const f = { core: 0, tfw: 0, fn: 0, nri: 0 };
-    for (const r of db.records) {
-        if (!inScope(r)) continue;
+    for (const r of demoRecords) {
         if (!r.sup) f.core++;
         if (r.tfw) f.tfw++;
         if (r.fn) f.fn++;
@@ -1549,14 +1660,14 @@ function renderQuota() {
     const status = (filled, c, lockedLabel) => filled > c ? ["Exceeded", "er"] : (c > 0 && filled === c ? [lockedLabel, "ok"] : ["Open", "in"]);
 
     const Q = [
-        { label: "Core Sanctioned Intake (I₀)", f: f.core, c: core, s: status(f.core, core, "Locked"), note: `Sanctioned seats across ${INSTITUTIONS.length} institutions. Overflow blocked.` },
+        { label: "Core Demo Intake (I₀)", f: f.core, c: core, s: status(f.core, core, "Locked"), note: `Configured sample capacities for ${INSTITUTIONS.length} demo institutions only. Imported colleges need verified seat matrices.` },
         { label: "Tuition Fee Waiver (TFW)", f: f.tfw, c: cap(5), s: status(f.tfw, cap(5), "Filled"), note: "Max 5% supernumerary. Verified income < ₹8L." },
         { label: "Foreign National / OCI / PIO", f: f.fn, c: cap(15), s: status(f.fn, cap(15), "Filled"), note: "Max 15% supernumerary. Passport + FRRO verified." },
         { label: "NRI Quota", f: f.nri, c: cap(5), s: status(f.nri, cap(5), "Filled"), note: "Max 5% of sanctioned intake." }
     ];
 
     const sub = el("quota-sub");
-    if (sub) sub.textContent = `${scopeName()} · Digital Seat-Pass`;
+    if (sub) sub.textContent = `${scopeName()} · Demo seat matrix only`;
 
     el("quota-matrix").innerHTML = Q.map(q => {
         const p = q.c ? Math.min(100, Math.round(q.f / q.c * 100)) : 0;
@@ -1576,11 +1687,25 @@ function renderIngHead() {
     const target = el("ing-head");
     if (!instSelect || !yearInput || !branchSelect || !target) return;
 
-    const inst = INSTITUTIONS.find(i => i.id === instSelect.value) || INSTITUTIONS[0];
+    const inst = getInstitutionById(instSelect.value) || {
+        institution_id: instSelect.value,
+        name: instSelect.value,
+        category: "OTHER",
+        verification_status: "pending_review"
+    };
     const y = Number(yearInput.value) || 2026;
     const b = BRANCH_MAP[branchSelect.value] || BRANCH_MAP.CSE;
-    target.innerHTML = `<h2>${escapeHTML(inst.name)} ${pill("AICTE Approved", "ok")}</h2>
-        <p><span class="mono">Institute: ${escapeHTML(inst.id)}</span> · ${escapeHTML(b.name)} · AY ${y}-${String(y + 1).slice(-2)} · <span class="muted">Authenticated submissions are recorded in the MongoDB activity feed below.</span></p>`;
+    const sourceLabel = inst.is_demo || inst.category === "DEMO"
+        ? "Demo institution"
+        : (inst.verification_status === "source_listed"
+            ? `Source listed · ${inst.source || inst.category}`
+            : (inst.verification_status === "official_site_listed"
+                ? `Official site listing · ${inst.source || inst.category}`
+                : "Source review pending"));
+    const sourceKind = inst.is_demo || inst.category === "DEMO" ? "in" :
+        (inst.verification_status === "pending_review" ? "wn" : "ok");
+    target.innerHTML = `<h2>${escapeHTML(inst.name)} ${pill(sourceLabel, sourceKind)}</h2>
+        <p><span class="mono">Institution: ${escapeHTML(inst.institution_id)}</span> · ${escapeHTML([inst.city, inst.state].filter(Boolean).join(", "))} · ${escapeHTML(b.name)} · AY ${y}-${String(y + 1).slice(-2)} · <span class="muted">Submissions are recorded in the MongoDB activity feed.</span></p>`;
 }
 
 // Real ingestion activity. Successful records are fetched from the authenticated
@@ -1640,7 +1765,7 @@ function renderBatchActivity() {
 
     const activeRole = document.body.getAttribute("data-role") || "aicte";
     const visibleFeedRecords = (Array.isArray(batchFeedRecords) ? batchFeedRecords : [])
-        .filter(record => activeRole !== "institution" || record.institution_id === "INST001");
+        .filter(record => activeRole !== "institution" || record.institution_id === institutionScopeId());
     const remoteRows = visibleFeedRecords.map(record => ({
         reference: record.reference || "Ledger record",
         student_id: record.student_id || "—",
@@ -1659,7 +1784,7 @@ function renderBatchActivity() {
     // have not appeared in the latest server page yet. De-duplicate commits.
     const remoteKeys = new Set(remoteRows.map(row => row.key));
     const localRows = batchEvents
-        .filter(event => activeRole !== "institution" || event.institution_id === "INST001")
+        .filter(event => activeRole !== "institution" || event.institution_id === institutionScopeId())
         .filter(event => {
             const key = `${event.student_id || ""}|${event.institution_id || ""}`;
             return event.status !== "Committed" || !remoteKeys.has(key);
@@ -3020,10 +3145,12 @@ function triggerDownload(button, format, requestedName) {
     const records = sortRecords().filter(inScope);
     if (format === "excel") {
         const rows = [["Institution ID", "Institution", "Branch", "Sanctioned Intake", "Local Regular Records", "Local Supernumerary Records"]];
-        INSTITUTIONS.forEach(inst => {
+        institutionDirectory.forEach(inst => {
             BRANCHES.filter(branch => branch.code !== "OTH").forEach(branch => {
-                const same = records.filter(record => record.inst === inst.id && branchOf(record) === branch.code);
-                rows.push([inst.id, inst.name, branch.code, sanctioned(inst.id, branch.code),
+                const same = records.filter(record => record.inst === inst.institution_id && branchOf(record) === branch.code);
+                const intake = sanctioned(inst.institution_id, branch.code);
+                rows.push([inst.institution_id, inst.name, branch.code,
+                    Number.isFinite(intake) ? intake : "Not configured",
                     same.filter(record => !record.sup).length, same.filter(record => record.sup).length]);
             });
         });
@@ -3098,9 +3225,9 @@ function initCharts() {
         records.filter(record => !!record.nri).length,
         records.filter(record => !!record.fn).length
     ];
-    const instLabels = INSTITUTIONS.map(item => item.id);
-    const regular = INSTITUTIONS.map(inst => records.filter(record => record.inst === inst.id && !record.sup).length);
-    const supernumerary = INSTITUTIONS.map(inst => records.filter(record => record.inst === inst.id && record.sup).length);
+    const instLabels = institutionDirectory.map(item => item.short_name || item.institution_id);
+    const regular = institutionDirectory.map(inst => records.filter(record => record.inst === inst.institution_id && !record.sup).length);
+    const supernumerary = institutionDirectory.map(inst => records.filter(record => record.inst === inst.institution_id && record.sup).length);
     const common = {
         responsive: true,
         maintainAspectRatio: false,
@@ -3143,11 +3270,12 @@ function renderInstitutionRankings() {
     if (!table) return;
     buildCaches();
     const records = db.records.filter(inScope);
-    const rows = INSTITUTIONS.map(inst => {
-        const own = records.filter(record => record.inst === inst.id);
+    const rows = institutionDirectory.map(inst => {
+        const own = records.filter(record => record.inst === inst.institution_id);
         const flagged = own.filter(record => analyzeFlags(record).length > 0).length;
         return { inst, count: own.length, flagged };
-    }).sort((a, b) => a.flagged - b.flagged || b.count - a.count || a.inst.name.localeCompare(b.inst.name));
+    }).filter(row => row.count > 0 || row.inst.is_demo).sort((a, b) =>
+        a.flagged - b.flagged || b.count - a.count || a.inst.name.localeCompare(b.inst.name));
 
     let html = `<tr><th>Local order</th><th>Institution</th><th>Local records</th><th>Flagged records</th></tr>`;
     if (!records.length) {
