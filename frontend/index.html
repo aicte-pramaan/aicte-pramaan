@@ -318,8 +318,11 @@
                         <h3>Ingest Single Student Record</h3>
                         <div class="form-grid">
                             <div class="input-group">
-                                <label>Institution</label>
+                                <label for="f-inst-search">Search institution</label>
+                                <input type="search" id="f-inst-search" class="depth-input" placeholder="Search IIT, NIT, IIIT, GFTI, RGIPT, state or name" autocomplete="off">
+                                <label for="f-inst">Institution</label>
                                 <select id="f-inst" class="depth-input"></select>
+                                <div id="f-inst-meta" class="helper-text" aria-live="polite"></div>
                             </div>
                             <div class="input-group">
                                 <label>APAAR ID (12-digit)</label>
@@ -821,7 +824,7 @@
 </script>
 
 <!-- Main application -->
-<script src="app.js?v=data-engine-warmup-2-browser-block-fix"></script>
+<script src="app.js?v=institute-directory-v1"></script>
 <script src="entry.js?v=auth-flow-fix-3"></script>
 
 <!-- Branch selector cleanup.
