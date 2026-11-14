@@ -22,6 +22,35 @@ The platform combines a browser-based portal, a Node.js backend, MongoDB persist
 
 ---
 
+---
+
+## Application Screenshots
+
+### 1. Role Selection
+
+The portal provides role-based access for different users.
+
+![Role Selection](docs/screenshots/01-role-selection.png)
+
+### 2. Admin Dashboard
+
+The dashboard provides an overview of student records, anomalies and admission quota information.
+
+![Admin Dashboard](docs/screenshots/02-admin-dashboard.png)
+
+### 3. Audit Trail
+
+The audit module demonstrates hash-linked audit events and chain integrity status.
+
+![Audit Trail](docs/screenshots/03-audit-trail.png)
+
+### 4. Student Record Verification
+
+The verification interface demonstrates digital certificate presentation and cryptographic verification.
+
+![Record Verification](docs/screenshots/04-verify-identity.png)
+
+
 ## Project Overview
 
 AICTE-PRAMAAN demonstrates a centralized workflow for managing and verifying student admission records.
