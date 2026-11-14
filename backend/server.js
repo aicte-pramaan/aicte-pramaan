@@ -10,6 +10,7 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 
 const connectDB = require('./config/db');
+const seedInstitutions = require('./utils/seedInstitutions');
 const {
     rehydrateMerkleTree,
     resignStoredRecords
@@ -52,6 +53,7 @@ app.get('/api/data', (req, res) => {
 
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/institutions', require('./routes/institutionRoutes'));
 app.use('/api/records', require('./routes/ingestRoutes'));
 app.use('/api/audit', require('./routes/auditRoutes'));
 app.use('/api/vigilance', require('./routes/vigilanceRoutes'));
@@ -69,6 +71,8 @@ async function startServer() {
     }
 
     console.log('MongoDB connection verified.');
+
+    await seedInstitutions();
 
     if (process.env.RESIGN_EXISTING_RECORDS === 'true') {
         await resignStoredRecords();
