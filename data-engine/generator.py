@@ -18,7 +18,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-INSTITUTIONS = ["INST001", "INST002", "INST003"]
+INSTITUTIONS = [
+    "INST001", "INST002", "INST003",
+    "JOSAA-101", "JOSAA-102", "JOSAA-103", "JOSAA-104", "JOSAA-109",
+    "JOSAA-110", "JOSAA-112", "JOSAA-113", "JOSAA-117", "JOSAA-124",
+    "JOSAA-201", "JOSAA-202", "JOSAA-206", "JOSAA-214", "JOSAA-223",
+    "JOSAA-226", "JOSAA-228", "JOSAA-231", "JOSAA-232", "JOSAA-301",
+    "JOSAA-309", "JOSAA-322", "JOSAA-402", "RGIPT-JAIS"
+]
 COURSES = ["B.Tech CSE", "B.Tech ECE", "B.Tech ME", "PGDM", "B.Tech IT"]
 
 
