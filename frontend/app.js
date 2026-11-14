@@ -527,7 +527,7 @@ async function updateDashboard() {
 
     el("inst-table").previousElementSibling.textContent = `Intake vs. Actual Enrolment · ${scopeName()}`;
 
-    let tableHTML = `<tr><th>Institution</th><th>Branch</th><th class="num">Approved Intake</th><th class="num">Actual Enrolment</th><th class="num">Supernumerary</th><th>Status</th></tr>`;
+    let tableHTML = `<tr><th>Institution</th><th>Branch</th><th class="num">Configured Intake</th><th class="num">Actual Enrolment</th><th class="num">Supernumerary</th><th>Status</th></tr>`;
     if (list.length === 0) tableHTML += `<tr><td colspan="6" class="text-center helper-text">No enrolments yet. Add a record or load the sample data.</td></tr>`;
     
     list.slice(0, 60).forEach(data => {
