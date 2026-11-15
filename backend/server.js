@@ -38,10 +38,13 @@ app.use(limiter);
 // Serve the frontend
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// Health Check
+// Readiness Check: the API is ready only while MongoDB is connected.
 app.get('/health', (req, res) => {
-    res.json({
-        status: 'Secure Node.js Core Online',
+    const databaseReady = mongoose.connection.readyState === 1;
+
+    return res.status(databaseReady ? 200 : 503).json({
+        status: databaseReady ? 'ok' : 'unavailable',
+        database: databaseReady ? 'connected' : 'disconnected',
         version: '2.0.0-MERN'
     });
 });
