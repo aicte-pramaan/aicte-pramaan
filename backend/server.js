@@ -10,6 +10,7 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 
 const connectDB = require('./config/db');
+const seedInstitutions = require('./utils/seedInstitutions');
 const {
     rehydrateMerkleTree,
     resignStoredRecords
@@ -37,10 +38,13 @@ app.use(limiter);
 // Serve the frontend
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// Health Check
+// Readiness Check: the API is ready only while MongoDB is connected.
 app.get('/health', (req, res) => {
-    res.json({
-        status: 'Secure Node.js Core Online',
+    const databaseReady = mongoose.connection.readyState === 1;
+
+    return res.status(databaseReady ? 200 : 503).json({
+        status: databaseReady ? 'ok' : 'unavailable',
+        database: databaseReady ? 'connected' : 'disconnected',
         version: '2.0.0-MERN'
     });
 });
@@ -52,6 +56,7 @@ app.get('/api/data', (req, res) => {
 
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/institutions', require('./routes/institutionRoutes'));
 app.use('/api/records', require('./routes/ingestRoutes'));
 app.use('/api/audit', require('./routes/auditRoutes'));
 app.use('/api/vigilance', require('./routes/vigilanceRoutes'));
@@ -69,6 +74,8 @@ async function startServer() {
     }
 
     console.log('MongoDB connection verified.');
+
+    await seedInstitutions();
 
     if (process.env.RESIGN_EXISTING_RECORDS === 'true') {
         await resignStoredRecords();

@@ -1,6 +1,7 @@
 
 const express = require('express');
 const StudentRecord = require('../models/StudentRecord');
+const Institution = require('../models/Institution');
 
 const {
     signData,
@@ -166,6 +167,25 @@ router.post(
             ) {
                 return res.status(400).json({
                     error: 'Invalid or missing required student fields.'
+                });
+            }
+
+            const registeredInstitution = await Institution.findOne({
+                institution_id: institutionId,
+                is_active: true
+            }).select('institution_id').lean();
+
+            if (!registeredInstitution) {
+                return res.status(400).json({
+                    error: 'Select an active institution from the institute directory.',
+                    code: 'UNKNOWN_INSTITUTION'
+                });
+            }
+
+            if (req.user.role === 'INSTITUTION' && req.user.username !== institutionId) {
+                return res.status(403).json({
+                    error: 'Institution accounts may submit records only for their own institution.',
+                    code: 'INSTITUTION_SCOPE_MISMATCH'
                 });
             }
 
@@ -512,6 +532,15 @@ router.post(
                 return res.status(400).json({ error: 'Max 2000 records per request.' });
             }
 
+            const requestedInstitutionIds = [...new Set(
+                items.map(item => String(item?.institution_id || '').trim()).filter(Boolean)
+            )];
+            const activeInstitutions = await Institution.find({
+                institution_id: { $in: requestedInstitutionIds },
+                is_active: true
+            }).select('institution_id').lean();
+            const activeInstitutionIds = new Set(activeInstitutions.map(item => item.institution_id));
+
             let invalid = 0, duplicateInBatch = 0;
             const prepared = new Map();
 
@@ -525,7 +554,7 @@ router.post(
 
                 if (
                     apaarId.length < 8 || !studentId || !name ||
-                    !institutionId || !branch ||
+                    !institutionId || !activeInstitutionIds.has(institutionId) || !branch ||
                     !Number.isInteger(year) || year < 1900
                 ) { invalid++; continue; }
 

@@ -1,1 +1,27 @@
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Dependencies and virtual environments
+node_modules/
+**/node_modules/
+.venv/
+**/.venv/
+venv/
+**/venv/
+
+# Python generated files
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Logs, coverage and operating-system files
+*.log
+coverage/
+.nyc_output/
+.DS_Store
 *.backup

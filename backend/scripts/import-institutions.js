@@ -1,0 +1,146 @@
+const fs = require('fs');
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
+const connectDB = require('../config/db');
+const Institution = require('../models/Institution');
+const mongoose = require('mongoose');
+
+const ALLOWED_CATEGORIES = new Set([
+    'IIT', 'IISC', 'NIT', 'IIEST', 'IIIT', 'GFTI', 'RGIPT',
+    'AICTE_APPROVED', 'STATE', 'OTHER', 'DEMO'
+]);
+const ALLOWED_STATUSES = new Set([
+    'source_listed', 'official_site_listed', 'pending_review', 'demo'
+]);
+
+function parseCsvLine(line) {
+    const values = [];
+    let value = '';
+    let quoted = false;
+
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"' && quoted && line[i + 1] === '"') {
+            value += '"';
+            i++;
+        } else if (char === '"') {
+            quoted = !quoted;
+        } else if (char === ',' && !quoted) {
+            values.push(value.trim());
+            value = '';
+        } else {
+            value += char;
+        }
+    }
+    values.push(value.trim());
+    return values;
+}
+
+function parseCsv(text) {
+    const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(line => line.trim());
+    if (lines.length < 2) throw new Error('CSV must contain a header and at least one institution row.');
+
+    const headers = parseCsvLine(lines[0]).map(header => header.trim().toLowerCase());
+    const required = ['institution_id', 'name', 'category'];
+    for (const key of required) {
+        if (!headers.includes(key)) throw new Error('CSV is missing required column: ' + key);
+    }
+
+    const seenInstitutionIds = new Set();
+    const seenJosaaCodes = new Set();
+
+    return lines.slice(1).map((line, index) => {
+        const values = parseCsvLine(line);
+        const row = {};
+        headers.forEach((header, i) => { row[header] = values[i] || ''; });
+        row.institution_id = String(row.institution_id || '').trim().toUpperCase();
+        row.name = String(row.name || '').trim();
+        row.category = String(row.category || 'OTHER').trim().toUpperCase();
+        row.aliases = String(row.aliases || '').split('|').map(value => value.trim()).filter(Boolean);
+        row.source_year = row.source_year ? Number(row.source_year) : undefined;
+        row.is_active = String(row.is_active || 'true').toLowerCase() !== 'false';
+        row.verification_status = row.verification_status || 'pending_review';
+
+        if (!/^[A-Z0-9][A-Z0-9._-]{1,39}$/.test(row.institution_id)) {
+            throw new Error('Invalid institution_id on CSV data row ' + (index + 2));
+        }
+        if (!row.name || row.name.length > 240) {
+            throw new Error('Invalid institution name on CSV data row ' + (index + 2));
+        }
+        if (!ALLOWED_CATEGORIES.has(row.category)) {
+            throw new Error('Unsupported category on CSV data row ' + (index + 2) + ': ' + row.category);
+        }
+        if (!ALLOWED_STATUSES.has(row.verification_status)) {
+            throw new Error('Unsupported verification_status on CSV data row ' + (index + 2));
+        }
+        if (row.source_year !== undefined &&
+            (!Number.isInteger(row.source_year) || row.source_year < 2000 || row.source_year > 2100)) {
+            throw new Error('Invalid source_year on CSV data row ' + (index + 2));
+        }
+        if (row.josaa_code && !/^\d{3}$/.test(String(row.josaa_code))) {
+            throw new Error('Invalid JoSAA code on CSV data row ' + (index + 2));
+        }
+        if (seenInstitutionIds.has(row.institution_id)) {
+            throw new Error('Duplicate institution_id on CSV data row ' + (index + 2) + ': ' + row.institution_id);
+        }
+        seenInstitutionIds.add(row.institution_id);
+        if (row.josaa_code) {
+            if (seenJosaaCodes.has(String(row.josaa_code))) {
+                throw new Error('Duplicate JoSAA code on CSV data row ' + (index + 2) + ': ' + row.josaa_code);
+            }
+            seenJosaaCodes.add(String(row.josaa_code));
+        }
+        return row;
+    });
+}
+
+async function main() {
+    const filename = process.argv[2];
+    if (!filename) {
+        throw new Error('Usage: npm run import:institutions -- path/to/institutions.csv');
+    }
+
+    const csvPath = path.resolve(process.cwd(), filename);
+    const rows = parseCsv(fs.readFileSync(csvPath, 'utf8'));
+    await connectDB();
+
+    const operations = rows.map(row => ({
+        updateOne: {
+            filter: { institution_id: row.institution_id },
+            update: {
+                $set: {
+                    institution_id: row.institution_id,
+                    josaa_code: row.josaa_code || undefined,
+                    name: row.name,
+                    short_name: row.short_name || '',
+                    category: row.category,
+                    state: row.state || '',
+                    city: row.city || '',
+                    website: row.website || '',
+                    aliases: row.aliases || [],
+                    source: row.source || 'Imported institution dataset',
+                    source_url: row.source_url || '',
+                    source_year: row.source_year,
+                    verification_status: row.verification_status,
+                    is_active: row.is_active
+                },
+                $setOnInsert: { is_demo: false }
+            },
+            upsert: true
+        }
+    }));
+
+    const result = await Institution.bulkWrite(operations, { ordered: false });
+    console.log('Institution import complete.');
+    console.log('Rows read:', rows.length);
+    console.log('Inserted:', result.upsertedCount || 0);
+    console.log('Updated:', result.modifiedCount || 0);
+    await mongoose.disconnect();
+}
+
+main().catch(async error => {
+    console.error('Institution import failed:', error.message);
+    try { await mongoose.disconnect(); } catch (_) {}
+    process.exitCode = 1;
+});
