@@ -1,12 +1,12 @@
 # Institution directory import
 
-The API and frontend use a MongoDB-backed institution directory. The repository seeds the three existing INST00x demo institutions plus a starter catalogue of source-listed institutes. The starter file is not represented as a complete national list.
+The API and frontend use a MongoDB-backed institution directory. The repository seeds the three existing INST00x demo institutions, all 138 institutions in JoSAA's 2026–27 participating-institute directory, and RGIPT as a separately sourced entry. This starter catalogue is not a complete list of every AICTE-approved technical institution in India.
 
 ## Official source scope
 
-JoSAA's 2026 participating-institute page lists 138 institutes for the 2026–27 academic year across IITs, IISc, NITs, IIEST, IIITs and Other-GFTIs:
+JoSAA's 2026–27 participating-institute directory lists 138 institutes: 23 IITs, IISc, 31 NITs, IIEST, 26 IIITs and 56 Other-GFTIs. The institute codes used in this seed are the codes shown in the official directory:
 
-https://josaa.nic.in/participating-institutes/
+https://josaa.admissions.nic.in/applicant/seatmatrix/instituteview.aspx
 
 RGIPT is listed separately from JoSAA because it is not part of that 138-institute JoSAA count. Its official website is:
 
@@ -41,6 +41,8 @@ Allowed verification statuses: source_listed, official_site_listed, pending_revi
    npm run import:institutions -- data/institutions.csv
 
 6. Restart the backend. The frontend retrieves active directory items from GET /api/institutions.
+
+The Data Engine's default synthetic-data pool contains the seeded institution IDs. If you import additional institutions and want synthetic data to include them, set the Data Engine environment variable `INSTITUTION_IDS` to a comma-separated list of active institution IDs.
 
 The CLI importer uses MongoDB directly. The API also exposes POST /api/institutions/bulk-import, which requires the AICTE role.
 
