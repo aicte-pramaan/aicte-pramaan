@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon server.js"
+    "dev": "node --watch server.js",
+    "import:institutions": "node scripts/import-institutions.js"
   },
   "keywords": [],
   "author": "",
@@ -23,8 +24,5 @@
     "morgan": "^1.12.1",
     "otplib": "^13.5.0",
     "tweetnacl": "^1.0.3"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.14"
   }
 }
