@@ -13,9 +13,7 @@ const VERIFICATION_STATUSES = new Set([
 ]);
 
 function escapeRegex(value) {
-    return String(value).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\function escapeRegex(value) {
     return String(value).replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
-}');
 }
 
 function cleanInstitution(input = {}) {
