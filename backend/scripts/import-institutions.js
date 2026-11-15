@@ -47,6 +47,9 @@ function parseCsv(text) {
         if (!headers.includes(key)) throw new Error('CSV is missing required column: ' + key);
     }
 
+    const seenInstitutionIds = new Set();
+    const seenJosaaCodes = new Set();
+
     return lines.slice(1).map((line, index) => {
         const values = parseCsvLine(line);
         const row = {};
@@ -77,6 +80,16 @@ function parseCsv(text) {
         }
         if (row.josaa_code && !/^\d{3}$/.test(String(row.josaa_code))) {
             throw new Error('Invalid JoSAA code on CSV data row ' + (index + 2));
+        }
+        if (seenInstitutionIds.has(row.institution_id)) {
+            throw new Error('Duplicate institution_id on CSV data row ' + (index + 2) + ': ' + row.institution_id);
+        }
+        seenInstitutionIds.add(row.institution_id);
+        if (row.josaa_code) {
+            if (seenJosaaCodes.has(String(row.josaa_code))) {
+                throw new Error('Duplicate JoSAA code on CSV data row ' + (index + 2) + ': ' + row.josaa_code);
+            }
+            seenJosaaCodes.add(String(row.josaa_code));
         }
         return row;
     });
