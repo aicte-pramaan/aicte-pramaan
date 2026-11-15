@@ -6,6 +6,14 @@ const connectDB = require('../config/db');
 const Institution = require('../models/Institution');
 const mongoose = require('mongoose');
 
+const ALLOWED_CATEGORIES = new Set([
+    'IIT', 'IISC', 'NIT', 'IIEST', 'IIIT', 'GFTI', 'RGIPT',
+    'AICTE_APPROVED', 'STATE', 'OTHER', 'DEMO'
+]);
+const ALLOWED_STATUSES = new Set([
+    'source_listed', 'official_site_listed', 'pending_review', 'demo'
+]);
+
 function parseCsvLine(line) {
     const values = [];
     let value = '';
@@ -51,8 +59,24 @@ function parseCsv(text) {
         row.is_active = String(row.is_active || 'true').toLowerCase() !== 'false';
         row.verification_status = row.verification_status || 'pending_review';
 
-        if (!row.institution_id || !row.name || !row.category) {
-            throw new Error('Invalid required fields on CSV data row ' + (index + 2));
+        if (!/^[A-Z0-9][A-Z0-9._-]{1,39}$/.test(row.institution_id)) {
+            throw new Error('Invalid institution_id on CSV data row ' + (index + 2));
+        }
+        if (!row.name || row.name.length > 240) {
+            throw new Error('Invalid institution name on CSV data row ' + (index + 2));
+        }
+        if (!ALLOWED_CATEGORIES.has(row.category)) {
+            throw new Error('Unsupported category on CSV data row ' + (index + 2) + ': ' + row.category);
+        }
+        if (!ALLOWED_STATUSES.has(row.verification_status)) {
+            throw new Error('Unsupported verification_status on CSV data row ' + (index + 2));
+        }
+        if (row.source_year !== undefined &&
+            (!Number.isInteger(row.source_year) || row.source_year < 2000 || row.source_year > 2100)) {
+            throw new Error('Invalid source_year on CSV data row ' + (index + 2));
+        }
+        if (row.josaa_code && !/^\\d{3}$/.test(String(row.josaa_code))) {
+            throw new Error('Invalid JoSAA code on CSV data row ' + (index + 2));
         }
         return row;
     });
