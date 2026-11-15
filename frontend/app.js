@@ -803,11 +803,20 @@ function updateSeatHint() {
     const branch = BRANCH_MAP[code];
     const cap = sanctioned(inst, code);
     const filled = instRegCache[seatKey(inst, code)] || 0;
-    const open = Math.max(0, cap - filled);
+    const institution = getInstitutionById(inst);
+    const institutionName = institution?.name || inst;
 
-    hint.innerHTML = `Sanctioned intake for <strong>${escapeHTML(branch.short)}</strong> at ${escapeHTML(inst)}: ${cap}
-        · Filled (regular seats): ${filled} · Open: ${open} ` +
-        (open === 0 ? pill("Full: new regular admissions will be flagged", "er") : pill("Seats available", "ok"));
+    if (!Number.isFinite(cap)) {
+        hint.innerHTML = `<strong>${escapeHTML(branch.short)}</strong> at ${escapeHTML(institutionName)} · ${filled} local regular records. ` +
+            pill("Official intake not configured", "wn") +
+            `<span class="muted"> No seat-limit decision will be made until a verified programme-wise intake matrix is imported.</span>`;
+        return;
+    }
+
+    const open = Math.max(0, cap - filled);
+    hint.innerHTML = `Configured demo intake for <strong>${escapeHTML(branch.short)}</strong> at ${escapeHTML(institutionName)}: ${cap}
+        · Filled: ${filled} · Open: ${open} ` +
+        (open === 0 ? pill("Demo intake full", "er") : pill("Within configured demo intake", "ok"));
 }
 
 let renderPage = function(p) {
