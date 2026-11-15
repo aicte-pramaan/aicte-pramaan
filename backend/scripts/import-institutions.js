@@ -75,7 +75,7 @@ function parseCsv(text) {
             (!Number.isInteger(row.source_year) || row.source_year < 2000 || row.source_year > 2100)) {
             throw new Error('Invalid source_year on CSV data row ' + (index + 2));
         }
-        if (row.josaa_code && !/^\\d{3}$/.test(String(row.josaa_code))) {
+        if (row.josaa_code && !/^\d{3}$/.test(String(row.josaa_code))) {
             throw new Error('Invalid JoSAA code on CSV data row ' + (index + 2));
         }
         return row;
