@@ -9,7 +9,7 @@ const institutionSchema = new mongoose.Schema({
         uppercase: true,
         maxlength: 40
     },
-    josaa_code: { type: String, trim: true, index: true },
+    josaa_code: { type: String, trim: true, index: true, unique: true, sparse: true },
     name: { type: String, required: true, trim: true, maxlength: 240 },
     short_name: { type: String, trim: true, maxlength: 80 },
     category: {
